@@ -26,23 +26,30 @@ This system is formally aligned with the **Iron TLA+/Alloy Specification** (`doc
 4.  **Revocation**: Transitive and Terminal. Enforced in L1 via recursive `revoked` checks.
 5.  **Accountability Completeness**: Failed attempts are logged. Enforced via `try-catch` in L2 `StateModel`.
 6.  **Budget Atomicity**: Exhaustion = Zero State Change. Enforced in L3 `SimulationEngine`.
+7.  **Operational Guards**: Explicit Runtime Guards (`src/L0/Guards.ts`) implemented for Key Invariants.
+8.  **Atomic Kernel Flow**: `GovernanceKernel` enforces `Attempt -> Guard -> Execute -> Outcome` sequence.
 
 ### Security Hardening (Ed25519 + SHA256)
 - **L0 Crypto**: All signing uses Ed25519. Hashing uses strict SHA-256.
 - **Signed Intents**: Loose `Evidence` replaced by `Intent`, which MUST be signed.
 - **State**: `StateModel.apply()` blindly rejects anything with an invalid signature.
 
+## Operationalization (Runtime)
+The system uses a **Governance Kernel** (`src/Kernel.ts`) as the trusted orchestrator.
+- **Guards**: Pure functions verifying Context vs Input.
+- **Audit**: Logs `ATTEMPT` before status change, and `SUCCESS`/`FAILURE` after.
+- **Fuzzer**: Property-based chaos testing (`src/Chaos/Fuzzer.ts`) ensures robustness.
+
 ## Verification
 A System-Level Test Suite (`src/__tests__/System.test.ts`) verifies the interaction across all layers and formal invariants.
 
 ```bash
 PASS  src/__tests__/System.test.ts
-  Iron. Formal Gap Verification
-    √ Gap 1: Delegation Scope Subset Enforcement (2 ms)
-    √ Gap 2: Protocol Conflict Rejection (1 ms)
-    √ Gap 3: Monotonic Time Enforcement (1 ms)
-    √ Gap 4: Revoked Principal Cannot Act (1 ms)
-    √ Gap 5: Failed Attempts are Logged (1 ms)
+  Iron. Operationalization (Kernel & Guards)
+    √ Atomic Execution Flow: Attempt -> Guard -> Execute -> Outcome (3 ms)
+    √ Guard Rejection: Invalid Signature (1 ms)
+    √ Guard Rejection: Scope Violation (1 ms)
+    √ Chaos Fuzzer Run (10 ms)
 ```
 
 ## Conclusion

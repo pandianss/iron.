@@ -74,3 +74,16 @@
     - [x] SignedIntentOnly (`Intent` interface)
     - [x] LogChain (Hash-linked LogEntry)
     - [x] Protocol Conflict Rejection
+
+## Operationalization (Runtime Guards & Atomicity)
+- [x] **Runtime Architecture**
+    - [x] Create `GovernanceKernel` (Trusted Orchestrator)
+    - [x] Implement `Guard` Pattern (`Identity`, `Intent`, `Protocol`, `Time`, `Budget`)
+- [x] **Atomic Execution Flow (12-Step)**
+    - [x] Log ATTEMPT before execution
+    - [x] Enforce Pre-computation of Cost & Budget Reservation
+    - [x] Log OUTCOME after execution
+- [x] **Traceability & Testing**
+    - [x] Map Checks: Invariant -> Guard -> Test
+    - [x] Implement Property-Based Fuzzer (Chaos)
+    - [x] Verify Failure Semantics (Reject vs Halt)
