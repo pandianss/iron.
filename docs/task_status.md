@@ -1,0 +1,66 @@
+# Iron. Implementation Checklist (Closed System Refactor)
+
+## Phase 1 — Kernel Freeze (L0) & Identity (L1)
+- [x] **L0: Kernel (Invariants)**
+    - [x] `Time.ts` (Keep)
+    - [x] `Invariant.ts` (Keep)
+    - [x] `Crypto.ts` (Extract Primitives)
+    - [x] `Budgets.ts` (New: Energy, Risk)
+    - [x] *Remove*: Identity, Evidence, Ledger
+- [x] **L1: Identity & Trust**
+    - [x] `Identity.ts` (Move from L0)
+    - [x] `Delegation.ts` (New: Chain of Trust)
+    - [x] Tests: Signature verification, Delegation checking
+
+## Phase 2 — Truth (L2) & Simulation (L3)
+- [x] **L2: Truth & State**
+    - [x] `Evidence.ts` (Move from L0)
+    - [x] `State.ts` (Refactor L1 Truth)
+    - [x] `Assertions.ts` (New wrapper)
+- [x] **L3: Simulation & Forecast**
+    - [x] `Forecast.ts` (Refactor L2 TrendAnalyzer)
+    - [x] `Simulation.ts` (Refactor L3 Engine)
+    - [x] Tests: Forecast impact, Budget consumption
+
+## Phase 3 — Protocol (L4) & Accountability (L5)
+- [x] **L4: Protocol Execution**
+    - [x] `Protocol.ts` (Keep DSL)
+    - [x] Ensure execution uses L0 Budgets
+- [x] **L5: Accountability & Audit**
+    - [x] `AuditLog.ts` (Move L0 Ledger here)
+    - [x] `Accountability.ts` (Keep SLA/Incentives)
+    - [x] Tests: Append-only verification
+
+## Phase 4 — Interfaces (L6) & Chaos
+- [x] **L6: Interface Boundary**
+    - [x] `Interface.ts` (Update imports)
+- [x] **Chaos (Verifier)**
+    - [x] Ensure Chaos validates governance but doesn't govern
+    - [x] Update imports
+
+## System Cleanup
+- [x] Update all imports
+- [x] Verify full system tests
+
+## Security Hardening (New)
+- [x] **L0 Crypto Hardening**
+    - [x] Implement `Ed25519` signing/verification wrappers
+    - [x] Enforce SHA-256 everywhere
+- [x] **Identity & Intent**
+    - [x] Update `Identity` to use Ed25519 Public Keys
+    - [x] Create `Intent` object structure (Signed Action)
+    - [x] Refactor `State.apply` to accept ONLY Signed Intents
+- [x] **Protocol Security**
+    - [x] Protocols must be signed and versioned
+- [x] **Audit**
+    - [x] Verify Hash-chaining uses strict SHA-256(prev + intent)
+    - [x] Ensure non-repudiation
+
+## Formal Model Alignment (TLA+ / Alloy)
+- [x] **Safety Invariants (TLA+)**
+    - [x] INV-ID-1: All events signed (Enforced by `State.apply`)
+    - [x] INV-ID-2: No hidden actors (Enforced by `Principal` check)
+    - [x] INV-ACC-1: Every event logged (`AuditLog.append`)
+- [x] **Structural Invariants (Alloy)**
+    - [x] SignedIntentOnly (`Intent` interface)
+    - [x] LogChain (Hash-linked LogEntry)
