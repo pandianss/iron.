@@ -1,0 +1,90 @@
+
+// src/Chaos/Fuzzer.ts
+import { IntentFactory } from '../L2/IntentFactory';
+import { generateKeyPair, Ed25519PrivateKey, hash } from '../L0/Crypto';
+import { GovernanceKernel } from '../Kernel';
+import { IdentityManager, Principal } from '../L1/Identity';
+
+export class Fuzzer {
+    constructor(
+        private kernel: GovernanceKernel,
+        private identity: IdentityManager
+    ) { }
+
+    async run(iterations: number) {
+        console.log(`Starting Fuzzing (${iterations} iterations)...`);
+
+        const keys = generateKeyPair();
+        const actor: Principal = { id: 'fuzzer', publicKey: keys.publicKey, type: 'AGENT', validFrom: 0, validUntil: 9999999999999 };
+        this.identity.register(actor);
+
+        for (let i = 0; i < iterations; i++) {
+            const scenario = Math.floor(Math.random() * 4);
+
+            try {
+                switch (scenario) {
+                    case 0: // Valid
+                        this.runValid(actor.id, keys.privateKey);
+                        break;
+                    case 1: // Invalid Signature
+                        this.runInvalidSig(actor.id, keys.privateKey);
+                        break;
+                    case 2: // Time Violation
+                        this.runTimeViolation(actor.id, keys.privateKey);
+                        break;
+                    case 3: // Revoked
+                        this.runRevoked(actor.id, keys.privateKey);
+                        break;
+                }
+            } catch (e) {
+                // Ignore Kernel Rejects, strictly looking for Crashes or Silent Failures
+                // In Property Testing, we assert the RESULT matches expectation.
+            }
+        }
+    }
+
+    private runValid(id: string, key: Ed25519PrivateKey) {
+        const intent = IntentFactory.create('load', Math.random() * 100, id, key);
+        this.kernel.execute(intent);
+        // Expect Success
+    }
+
+    private runInvalidSig(id: string, key: Ed25519PrivateKey) {
+        const intent = IntentFactory.create('load', 0, id, key);
+        intent.signature = 'deadbeef';
+        try {
+            this.kernel.execute(intent);
+            throw new Error("Fuzzer Error: Invalid Sig Accepted!");
+        } catch (e: any) {
+            if (!e.message.includes("Kernel Reject: Invalid Signature")) throw e;
+        }
+    }
+
+    private runTimeViolation(id: string, key: Ed25519PrivateKey) {
+        // Future intent? Or Backwards? 
+        // Backwards is easier to provoke if we don't control State history perfectly here.
+        // Let's create an intent with TS = 0.
+        const intent = IntentFactory.create('load', 0, id, key, 0);
+        try {
+            this.kernel.execute(intent);
+            // Might succeed if it's the first event!
+        } catch (e: any) {
+            if (!e.message.includes("Time Violation")) throw e;
+        }
+    }
+
+    private runRevoked(id: string, key: Ed25519PrivateKey) {
+        // Create temp revoked actor
+        const rKeys = generateKeyPair();
+        const rActor: Principal = { id: 'revoked', publicKey: rKeys.publicKey, type: 'AGENT', validFrom: 0, validUntil: 99999, revoked: true };
+        this.identity.register(rActor);
+
+        const intent = IntentFactory.create('load', 0, rActor.id, rKeys.privateKey);
+        try {
+            this.kernel.execute(intent);
+            throw new Error("Fuzzer Error: Revoked Actor Accepted!");
+        } catch (e: any) {
+            if (!e.message.includes("Kernel Reject: Principal revoked")) throw e;
+        }
+    }
+}

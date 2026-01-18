@@ -9,14 +9,14 @@ export interface LogEntry {
     hash: string;
     previousHash: string;
     intent: Intent; // Was Evidence
-    status: 'SUCCESS' | 'FAILURE'; // Gap 5
+    status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT'; // Gap 5 + Operationalization
 }
 
 export class AuditLog {
     private chain: LogEntry[] = [];
     private genesisHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
-    public append(intent: Intent, status: 'SUCCESS' | 'FAILURE' = 'SUCCESS'): LogEntry {
+    public append(intent: Intent, status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT' = 'SUCCESS'): LogEntry {
         const previousHash = this.chain.length > 0 ? this.chain[this.chain.length - 1].hash : this.genesisHash;
         const entryHash = this.calculateHash(previousHash, intent, status);
 
