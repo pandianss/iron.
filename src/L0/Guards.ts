@@ -1,10 +1,11 @@
 
 // src/L0/Guards.ts
-import { Principal, IdentityManager, DelegationEngine } from '../L1/Identity';
-import { verifySignature } from './Crypto';
-import { Intent } from '../L2/State';
-import { Budget } from './Kernel';
-import { Protocol } from '../L4/Protocol';
+import type { Principal } from '../L1/Identity.js';
+import { IdentityManager, DelegationEngine } from '../L1/Identity.js';
+import { verifySignature } from './Crypto.js';
+import type { Intent } from '../L2/State.js';
+import { Budget } from './Kernel.js';
+import type { Protocol } from '../L4/Protocol.js';
 
 // --- Guard Pattern ---
 export type GuardResult = { ok: true } | { ok: false; violation: string };
@@ -47,7 +48,7 @@ export const TimeGuard: Guard<{ currentTs: string, lastTs: string }> = ({ curren
 // 4. Budget
 export const BudgetGuard: Guard<{ budget: Budget, cost: number }> = ({ budget, cost }) => {
     // Check only. Do not consume.
-    if (budget.remaining < cost) return FAIL("Budget Exhausted");
+    if ((budget.limit - budget.used) < cost) return FAIL("Budget Exhausted");
     return OK;
 };
 

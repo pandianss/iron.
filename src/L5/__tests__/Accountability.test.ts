@@ -1,24 +1,30 @@
-
-import { AuditLedger, DeterministicTime, Principal } from '../../L0/Kernel';
-import { MetricRegistry, MetricType, StateModel, EvidenceGenerator } from '../../L1/Truth';
-import { AccountabilityEngine, SLA } from '../../L5/Accountability';
-import { ChaosEngine } from '../../Chaos/Engine';
-import { Action } from '../../L3/Simulation';
+import { DeterministicTime } from '../../L0/Kernel.js';
+import { IdentityManager } from '../../L1/Identity.js';
+import type { Principal } from '../../L1/Identity.js';
+import { MetricRegistry, MetricType, StateModel } from '../../L2/State.js';
+import { AccountabilityEngine } from '../../L5/Accountability.js';
+import type { SLA } from '../../L5/Accountability.js';
+import { ChaosEngine } from '../../Chaos/Engine.js';
+import type { Action } from '../../L3/Simulation.js';
+import { AuditLog } from '../../L5/Audit.js';
 
 describe('L5 Accountability & Chaos', () => {
-    let ledger: AuditLedger;
     let time: DeterministicTime;
     let registry: MetricRegistry;
+    let audit: AuditLog;
+    let identity: IdentityManager;
     let state: StateModel;
     let accEngine: AccountabilityEngine;
     let chaosEngine: ChaosEngine;
-    const admin: Principal = { id: 'admin', publicKey: 'key' };
+    const admin: Principal = { id: 'admin', publicKey: 'key', type: 'INDIVIDUAL', validFrom: 0, validUntil: 999999 };
 
     beforeEach(() => {
-        ledger = new AuditLedger();
         time = new DeterministicTime();
         registry = new MetricRegistry();
-        state = new StateModel(ledger, registry);
+        audit = new AuditLog();
+        identity = new IdentityManager();
+        identity.register(admin);
+        state = new StateModel(audit, registry, identity);
 
         registry.register({ id: 'uptime', description: 'Uptime %', type: MetricType.GAUGE });
         registry.register({ id: 'system.rewards', description: 'Tokens', type: MetricType.GAUGE });
@@ -37,7 +43,7 @@ describe('L5 Accountability & Chaos', () => {
             accEngine.registerSLA(sla);
 
             // Set state checks out
-            state.apply(EvidenceGenerator.create('uptime', 100, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'uptime', value: 100 }, time.getNow().toString(), admin.id);
 
             accEngine.evaluate(admin, time.getNow());
 
@@ -52,7 +58,7 @@ describe('L5 Accountability & Chaos', () => {
             accEngine.registerSLA(sla);
 
             // Set state fails
-            state.apply(EvidenceGenerator.create('uptime', 90, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'uptime', value: 90 }, time.getNow().toString(), admin.id);
 
             accEngine.evaluate(admin, time.getNow());
 
@@ -63,8 +69,8 @@ describe('L5 Accountability & Chaos', () => {
     describe('Chaos', () => {
         test('should execute chaos if within budget', () => {
             const action: Action = { id: 'lat', description: 'Latency', targetMetricId: 'system.load', valueMutation: 10 };
-            // Use 90% load is unstable. Set 50.
-            state.apply(EvidenceGenerator.create('system.load', 50, admin, time.getNow()));
+
+            state.applyTrusted({ metricId: 'system.load', value: 50 }, time.getNow().toString(), admin.id);
 
             const ran = chaosEngine.scheduleInjection(action, 10, admin, time.getNow());
 
@@ -74,7 +80,7 @@ describe('L5 Accountability & Chaos', () => {
 
         test('should abort chaos if budget exceeded', () => {
             const action: Action = { id: 'lat', description: 'Latency', targetMetricId: 'system.load', valueMutation: 10 };
-            state.apply(EvidenceGenerator.create('system.load', 50, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'system.load', value: 50 }, time.getNow().toString(), admin.id);
 
             // Budget is 50. Request 60.
             const ran = chaosEngine.scheduleInjection(action, 60, admin, time.getNow());
@@ -86,7 +92,7 @@ describe('L5 Accountability & Chaos', () => {
         test('should abort chaos if system unstable', () => {
             const action: Action = { id: 'lat', description: 'Latency', targetMetricId: 'system.load', valueMutation: 10 };
             // Load 95 -> Unstable (>90)
-            state.apply(EvidenceGenerator.create('system.load', 95, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'system.load', value: 95 }, time.getNow().toString(), admin.id);
 
             const ran = chaosEngine.scheduleInjection(action, 10, admin, time.getNow());
 
@@ -94,3 +100,4 @@ describe('L5 Accountability & Chaos', () => {
         });
     });
 });
+

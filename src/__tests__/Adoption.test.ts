@@ -1,11 +1,13 @@
-
-import { DeterministicTime } from '../L0/Kernel';
-import { generateKeyPair, KeyPair, signData, hash } from '../L0/Crypto';
-import { IdentityManager, Principal } from '../L1/Identity';
-import { StateModel, MetricRegistry, MetricType } from '../L2/State';
-import { ProtocolEngine, ProtocolBundle, Protocol } from '../L4/Protocol';
-import { AuditLog } from '../L5/Audit';
-import { IntentFactory } from '../L2/IntentFactory';
+import { DeterministicTime, LogicalTimestamp } from '../L0/Kernel.js';
+import { generateKeyPair, signData, hash } from '../L0/Crypto.js';
+import type { KeyPair } from '../L0/Crypto.js';
+import { IdentityManager } from '../L1/Identity.js';
+import type { Principal } from '../L1/Identity.js';
+import { StateModel, MetricRegistry, MetricType } from '../L2/State.js';
+import { ProtocolEngine } from '../L4/Protocol.js';
+import type { ProtocolBundle, Protocol } from '../L4/Protocol.js';
+import { AuditLog } from '../L5/Audit.js';
+import { IntentFactory } from '../L2/IntentFactory.js';
 
 describe('Iron. Canonical Protocol Bundles', () => {
     let identity: IdentityManager;
@@ -82,7 +84,7 @@ describe('Iron. Canonical Protocol Bundles', () => {
 
         // Verify Outcome
         state.apply(IntentFactory.create('stress', 90, 'self', adminKeys.privateKey, 1000));
-        protocol.evaluateAndExecute('self', adminKeys.privateKey, 2000);
+        protocol.evaluateAndExecute('self', adminKeys.privateKey, new LogicalTimestamp(2000, 0));
         expect(state.get('recovery')).toBe(10);
     });
 

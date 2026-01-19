@@ -1,21 +1,26 @@
-
-import { AuditLedger, DeterministicTime, Principal } from '../../L0/Kernel';
-import { MetricRegistry, MetricType, StateModel, EvidenceGenerator } from '../../L1/Truth';
-import { TrendAnalyzer } from '../../L2/Prediction';
+import { DeterministicTime } from '../../L0/Kernel.js';
+import { IdentityManager } from '../../L1/Identity.js';
+import type { Principal } from '../../L1/Identity.js';
+import { MetricRegistry, MetricType, StateModel } from '../../L2/State.js';
+import { TrendAnalyzer } from '../../L2/Prediction.js';
+import { AuditLog } from '../../L5/Audit.js';
 
 describe('L1 Truth & L2 Prediction', () => {
-    let ledger: AuditLedger;
+    let audit: AuditLog;
     let time: DeterministicTime;
     let registry: MetricRegistry;
+    let identity: IdentityManager;
     let state: StateModel;
     let predictor: TrendAnalyzer;
-    const admin: Principal = { id: 'admin', publicKey: 'key' };
+    const admin: Principal = { id: 'admin', publicKey: 'key', type: 'INDIVIDUAL', validFrom: 0, validUntil: 999999 };
 
     beforeEach(() => {
-        ledger = new AuditLedger();
+        audit = new AuditLog();
         time = new DeterministicTime();
         registry = new MetricRegistry();
-        state = new StateModel(ledger, registry);
+        identity = new IdentityManager();
+        identity.register(admin);
+        state = new StateModel(audit, registry, identity);
         predictor = new TrendAnalyzer(state);
 
         registry.register({
@@ -26,34 +31,31 @@ describe('L1 Truth & L2 Prediction', () => {
     });
 
     describe('L1 Truth', () => {
-        test('should update state from evidence', () => {
-            const ev = EvidenceGenerator.create('system.load', 0.5, admin, time.getNow());
-            state.apply(ev);
+        test('should update state from trusted source', () => {
+            state.applyTrusted({ metricId: 'system.load', value: 0.5 }, time.getNow().toString(), admin.id);
 
             expect(state.get('system.load')).toBe(0.5);
-            expect(ledger.getHistory().length).toBe(1);
+            expect(audit.getHistory().length).toBe(1);
         });
 
         test('should maintain history', () => {
-            state.apply(EvidenceGenerator.create('system.load', 0.5, admin, time.getNow()));
-            state.apply(EvidenceGenerator.create('system.load', 0.6, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'system.load', value: 0.5 }, time.getNow().toString(), admin.id);
+            state.applyTrusted({ metricId: 'system.load', value: 0.6 }, time.getNow().toString(), admin.id);
 
             const history = state.getHistory('system.load');
             expect(history.length).toBe(2);
-            expect(history[0].value).toBe(0.5);
-            expect(history[1].value).toBe(0.6);
+            expect(history[0]!.value).toBe(0.5);
+            expect(history[1]!.value).toBe(0.6);
         });
     });
 
     describe('L2 Prediction', () => {
         test('should forecast linear trend', () => {
             // Seed 0, 10, 20, 30...
-            state.apply(EvidenceGenerator.create('system.load', 0, admin, time.getNow()));
-            state.apply(EvidenceGenerator.create('system.load', 10, admin, time.getNow()));
-            state.apply(EvidenceGenerator.create('system.load', 20, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'system.load', value: 0 }, time.getNow().toString(), admin.id);
+            state.applyTrusted({ metricId: 'system.load', value: 10 }, time.getNow().toString(), admin.id);
+            state.applyTrusted({ metricId: 'system.load', value: 20 }, time.getNow().toString(), admin.id);
 
-            // Predict next step (horizon 1)
-            // Sequence: 0, 10, 20. Next should be 30.
             const forecast = predictor.forecast('system.load', 1);
 
             expect(forecast).not.toBeNull();
@@ -62,15 +64,15 @@ describe('L1 Truth & L2 Prediction', () => {
 
         test('should calculate confidence bands', () => {
             // Perfect line -> 0 deviation
-            state.apply(EvidenceGenerator.create('system.load', 0, admin, time.getNow()));
-            state.apply(EvidenceGenerator.create('system.load', 10, admin, time.getNow()));
+            state.applyTrusted({ metricId: 'system.load', value: 0 }, time.getNow().toString(), admin.id);
+            state.applyTrusted({ metricId: 'system.load', value: 10 }, time.getNow().toString(), admin.id);
 
             const forecast = predictor.forecast('system.load', 1);
             expect(forecast!.confidenceHigh).toBeCloseTo(20);
             expect(forecast!.confidenceLow).toBeCloseTo(20);
 
             // Noisy data
-            state.apply(EvidenceGenerator.create('system.load', 22, admin, time.getNow())); // Should be 20
+            state.applyTrusted({ metricId: 'system.load', value: 22 }, time.getNow().toString(), admin.id);
 
             const noisyForecast = predictor.forecast('system.load', 1);
 
@@ -78,3 +80,4 @@ describe('L1 Truth & L2 Prediction', () => {
         });
     });
 });
+

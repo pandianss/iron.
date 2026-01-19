@@ -1,8 +1,6 @@
-
-import { StateModel, EvidenceGenerator } from '../L1/Truth';
-import { Principal, LogicalTimestamp } from '../L0/Kernel';
-import { ProtocolEngine } from '../L4/Protocol'; // Maybe reuse Protocol Engine for consequences? 
-// Or just plain logic. Spec says "Mechanical escalation".
+import { StateModel } from '../L2/State.js';
+import { LogicalTimestamp } from '../L0/Kernel.js';
+import type { Principal } from '../L1/Identity.js';
 
 export interface SLA {
     id: string;
@@ -15,13 +13,9 @@ export interface SLA {
 }
 
 export class ObligationTracker {
-    // Track active SLAs per principal? For MVP, just system-wide SLAs.
     constructor(private state: StateModel) { }
 
     public checkCompliance(sla: SLA): boolean {
-        // Simple spot check: Is current value valid?
-        // Real SLA needs time-window aggregation (avg over 1hr > X).
-        // MVP: Check current value.
         const val = Number(this.state.get(sla.metricId));
         if (isNaN(val)) return false;
 
@@ -49,12 +43,8 @@ export class AccountabilityEngine {
             const isCompliant = this.tracker.checkCompliance(sla);
 
             if (isCompliant) {
-                // Trigger Incentive
-                // Apply "Rewards" metric?
-                // Let's assume a "system.rewards" metric exists.
                 this.payout(sla.incentiveAmount, authority, time);
             } else {
-                // Trigger Consequence
                 this.penalize(sla.penaltyAmount, authority, time);
             }
         });
@@ -62,13 +52,12 @@ export class AccountabilityEngine {
 
     private payout(amount: number, authority: Principal, time: LogicalTimestamp) {
         const current = Number(this.state.get('system.rewards') || 0);
-        const ev = EvidenceGenerator.create('system.rewards', current + amount, authority, time);
-        this.state.apply(ev);
+        this.state.applyTrusted({ metricId: 'system.rewards', value: current + amount }, time.toString(), authority.id);
     }
 
     private penalize(amount: number, authority: Principal, time: LogicalTimestamp) {
         const current = Number(this.state.get('system.rewards') || 0);
-        const ev = EvidenceGenerator.create('system.rewards', current - amount, authority, time);
-        this.state.apply(ev);
+        this.state.applyTrusted({ metricId: 'system.rewards', value: current - amount }, time.toString(), authority.id);
     }
 }
+

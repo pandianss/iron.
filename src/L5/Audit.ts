@@ -1,15 +1,13 @@
-
 // src/L5/Audit.ts
-import { hash } from '../L0/Crypto';
-import { Intent } from '../L2/State';
-import { StateModel } from '../L2/State';
+import { hash } from '../L0/Crypto.js';
+import type { Intent } from '../L2/State.js';
 
 // --- Audit Log (Hash Chain) ---
 export interface LogEntry {
     hash: string;
     previousHash: string;
-    intent: Intent; // Was Evidence
-    status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT'; // Gap 5 + Operationalization
+    intent: Intent;
+    status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT';
 }
 
 export class AuditLog {
@@ -17,7 +15,7 @@ export class AuditLog {
     private genesisHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
     public append(intent: Intent, status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT' = 'SUCCESS'): LogEntry {
-        const previousHash = this.chain.length > 0 ? this.chain[this.chain.length - 1].hash : this.genesisHash;
+        const previousHash = this.chain.length > 0 ? this.chain[this.chain.length - 1]!.hash : this.genesisHash;
         const entryHash = this.calculateHash(previousHash, intent, status);
 
         const entry: LogEntry = {
@@ -33,32 +31,19 @@ export class AuditLog {
 
     public getHistory(): LogEntry[] { return [...this.chain]; }
 
+    public verifyIntegrity(): boolean {
+        let prev = this.genesisHash;
+        for (const entry of this.chain) {
+            if (entry.previousHash !== prev) return false;
+            const h = this.calculateHash(prev, entry.intent, entry.status);
+            if (h !== entry.hash) return false;
+            prev = entry.hash;
+        }
+        return true;
+    }
+
     private calculateHash(prevHash: string, intent: Intent, status: string): string {
         const data = prevHash + JSON.stringify(intent) + status;
         return hash(data);
-    }
-}
-
-// --- Accountability ---
-export interface SLA {
-    id: string;
-    metricId: string;
-    min?: number;
-    max?: number;
-    incentiveAmount: number;
-    penaltyAmount: number;
-}
-
-export class AccountabilityEngine {
-    constructor(private state: StateModel) { } // Depends on L2 State to read Truth
-
-    public checkSLA(sla: SLA): number {
-        const val = Number(this.state.get(sla.metricId));
-        if (isNaN(val)) return 0;
-
-        if (sla.min !== undefined && val < sla.min) return -sla.penaltyAmount;
-        if (sla.max !== undefined && val > sla.max) return -sla.penaltyAmount;
-
-        return sla.incentiveAmount;
     }
 }

@@ -1,6 +1,6 @@
 
 // src/L4/ProtocolTypes.ts
-import { PrincipalId } from '../L1/Identity';
+import type { PrincipalId } from '../L1/Identity.js';
 
 // --- Canonical Schema Definitions ---
 

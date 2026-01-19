@@ -1,6 +1,6 @@
 
 // src/L4/Extension.ts
-import { Protocol, ProtocolCategory } from './ProtocolTypes';
+import type { Protocol, ProtocolCategory } from './ProtocolTypes.js';
 
 export const ALLOWED_CATEGORIES: Set<ProtocolCategory> = new Set([
     'Intent', 'Habit', 'Budget', 'Authority', 'Accountability', 'Risk'

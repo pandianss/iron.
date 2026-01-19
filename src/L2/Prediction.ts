@@ -1,5 +1,5 @@
 
-import { StateModel } from '../L1/Truth';
+import { StateModel } from './State.js';
 
 // --- Prediction Models ---
 

@@ -1,7 +1,8 @@
 
 // src/L2/IntentFactory.ts
-import { Intent, MetricPayload } from './State';
-import { signData, hash, Ed25519PrivateKey, Ed25519PublicKey } from '../L0/Crypto';
+import type { Intent, MetricPayload } from './State.js';
+import { signData, hash } from '../L0/Crypto.js';
+import type { Ed25519PrivateKey, Ed25519PublicKey } from '../L0/Crypto.js';
 
 export class IntentFactory {
     static create(

@@ -1,9 +1,11 @@
 
 // src/Chaos/Fuzzer.ts
-import { IntentFactory } from '../L2/IntentFactory';
-import { generateKeyPair, Ed25519PrivateKey, hash } from '../L0/Crypto';
-import { GovernanceKernel } from '../Kernel';
-import { IdentityManager, Principal } from '../L1/Identity';
+import { IntentFactory } from '../L2/IntentFactory.js';
+import { generateKeyPair, hash } from '../L0/Crypto.js';
+import type { Ed25519PrivateKey } from '../L0/Crypto.js';
+import { GovernanceKernel } from '../Kernel.js';
+import { IdentityManager } from '../L1/Identity.js';
+import type { Principal } from '../L1/Identity.js';
 
 export class Fuzzer {
     constructor(

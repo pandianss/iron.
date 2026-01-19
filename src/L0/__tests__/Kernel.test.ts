@@ -1,5 +1,6 @@
-
-import { DeterministicTime, InvariantEngine, AuditLedger, Evidence } from '../Kernel';
+import { DeterministicTime, InvariantEngine } from '../Kernel.js';
+import { AuditLog } from '../../L5/Audit.js';
+import type { Intent } from '../../L2/State.js';
 
 describe('L0 Governance Kernel', () => {
 
@@ -29,52 +30,55 @@ describe('L0 Governance Kernel', () => {
         });
     });
 
-    describe('Audit Ledger', () => {
-        let ledger: AuditLedger;
+    describe('Audit Log', () => {
+        let audit: AuditLog;
 
         beforeEach(() => {
-            ledger = new AuditLedger();
+            audit = new AuditLog();
         });
 
         test('should chain hashes correctly', () => {
-            const ev1: Evidence = {
-                payload: { action: 'INIT' },
-                signatory: 'user-1',
-                signature: 'sig-1',
-                timestamp: '1000:0'
+            const intent1: Intent = {
+                intentId: 'id1',
+                principalId: 'user1',
+                payload: { metricId: 'test', value: 1 },
+                timestamp: '1000:0',
+                expiresAt: '2000:0',
+                signature: 'sig1'
             };
-            const ev2: Evidence = {
-                payload: { action: 'UPDATE' },
-                signatory: 'user-1',
-                signature: 'sig-2',
-                timestamp: '1001:0'
+            const intent2: Intent = {
+                intentId: 'id2',
+                principalId: 'user1',
+                payload: { metricId: 'test', value: 2 },
+                timestamp: '1001:0',
+                expiresAt: '2001:0',
+                signature: 'sig2'
             };
 
-            const entry1 = ledger.append(ev1);
-            const entry2 = ledger.append(ev2);
+            const entry1 = audit.append(intent1);
+            const entry2 = audit.append(intent2);
 
             expect(entry1.previousHash).toBe('0000000000000000000000000000000000000000000000000000000000000000');
             expect(entry2.previousHash).toBe(entry1.hash);
-            expect(ledger.verifyIntegrity()).toBe(true);
+            expect(audit.verifyIntegrity()).toBe(true);
         });
 
         test('should detect tampering', () => {
-            const ev1: Evidence = { payload: 'valid', signatory: 'me', signature: 'sig', timestamp: '0:0' };
-            ledger.append(ev1);
-            const history = ledger.getHistory();
+            const intent1: Intent = {
+                intentId: 'id1',
+                principalId: 'user1',
+                payload: { metricId: 'test', value: 1 },
+                timestamp: '1000:0',
+                expiresAt: '2000:0',
+                signature: 'sig1'
+            };
+            audit.append(intent1);
+            const history = audit.getHistory();
 
-            // Tamper with history (simulate storage corruption or attack)
-            // Note: getHistory returns a shallow copy of the array, but objects are mutable.
-            // In a real strict kernel, we'd deep freeze.
-            history[0].evidence.payload = 'tampered';
+            // Tamper with history
+            (history[0]!.intent.payload as any).value = 100;
 
-            // Actually, since getHistory returns the array, and we modified the object inside it which IS the object in the ledger class (passed by ref),
-            // wait... `ev1` object was passed in.
-
-            // Let's modify the internal evidence object if we can access it via the array.
-            // Typescript private is only compile time.
-
-            expect(ledger.verifyIntegrity()).toBe(false);
+            expect(audit.verifyIntegrity()).toBe(false);
         });
     });
 });

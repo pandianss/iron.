@@ -1,15 +1,19 @@
 
-import { DeterministicTime, Budget, BudgetType } from '../L0/Kernel';
-import { generateKeyPair, KeyPair } from '../L0/Crypto';
-import { IdentityManager, Principal, DelegationEngine, Delegation } from '../L1/Identity';
-import { StateModel, MetricRegistry, MetricType } from '../L2/State';
-import { IntentFactory } from '../L2/IntentFactory';
-import { SimulationEngine } from '../L3/Sim';
-import { ProtocolEngine, Protocol } from '../L4/Protocol'; // Imported Protocol
-import { AuditLog } from '../L5/Audit';
-import { GovernanceInterface } from '../L6/Interface';
-import { GovernanceKernel } from '../Kernel';
-import { Fuzzer } from '../Chaos/Fuzzer';
+import { DeterministicTime, Budget } from '../L0/Kernel.js';
+import type { BudgetType } from '../L0/Kernel.js';
+import { generateKeyPair } from '../L0/Crypto.js';
+import type { KeyPair } from '../L0/Crypto.js';
+import { IdentityManager, DelegationEngine } from '../L1/Identity.js';
+import type { Principal, Delegation } from '../L1/Identity.js';
+import { StateModel, MetricRegistry, MetricType } from '../L2/State.js';
+import { IntentFactory } from '../L2/IntentFactory.js';
+import { SimulationEngine } from '../L3/Simulation.js';
+import { ProtocolEngine } from '../L4/Protocol.js';
+import type { Protocol } from '../L4/Protocol.js';
+import { AuditLog } from '../L5/Audit.js';
+import { GovernanceInterface } from '../L6/Interface.js';
+import { GovernanceKernel } from '../Kernel.js';
+import { Fuzzer } from '../Chaos/Fuzzer.js';
 
 describe('Iron. Operationalization (Kernel & Guards)', () => {
     // Core
@@ -56,8 +60,8 @@ describe('Iron. Operationalization (Kernel & Guards)', () => {
         // Verify L5 Log: Should have ATTEMPT and SUCCESS (from State)
         const history = auditLog.getHistory();
         expect(history.length).toBeGreaterThanOrEqual(2);
-        expect(history[0].status).toBe('ATTEMPT');
-        expect(history[1].status).toBe('SUCCESS');
+        expect(history[0]!.status).toBe('ATTEMPT');
+        expect(history[1]!.status).toBe('SUCCESS');
 
         expect(state.get('load')).toBe(50);
     });

@@ -1,8 +1,10 @@
 
 // src/L2/State.ts
-import { PrincipalId, IdentityManager } from '../L1/Identity';
-import { verifySignature, hash } from '../L0/Crypto';
-import { AuditLog } from '../L5/Audit';
+import type { PrincipalId } from '../L1/Identity.js';
+import { IdentityManager } from '../L1/Identity.js';
+import { verifySignature, hash } from '../L0/Crypto.js';
+import { AuditLog } from '../L5/Audit.js';
+import { LogicalTimestamp } from '../L0/Kernel.js';
 
 // --- Intent ---
 export interface MetricPayload {
@@ -63,7 +65,7 @@ export class StateModel {
             // 1. Verify Identity & Signature
             const principal = this.identityManager.get(intent.principalId);
             if (!principal) throw new Error("Unknown Principal");
-            if (principal.revoked) throw new Error("Principal Revoked"); // Gap 4
+            if (principal.revoked) throw new Error("Principal Revoked");
 
             const data = `${intent.intentId}:${intent.principalId}:${JSON.stringify(intent.payload)}:${intent.timestamp}:${intent.expiresAt}`;
 
@@ -71,56 +73,68 @@ export class StateModel {
                 throw new Error("Invalid Intent Signature");
             }
 
-            const payload = intent.payload;
-            if (!payload?.metricId) throw new Error("Missing Metric ID");
-
-            // 2. Validate Payload
-            const def = this.registry.get(payload.metricId);
-            if (!def) throw new Error(`Unknown metric: ${payload.metricId}`);
-            if (def.validator && !def.validator(payload.value)) throw new Error("Invalid Value");
-
-            // 3. Gap 3: Monotonic Time Check
-            const lastState = this.state.get(payload.metricId);
-            if (lastState) {
-                // Assuming timestamps are sortable strings (ISO) or convertible numbers
-                // IntentFactory uses .toString() of Date.now(), so string comparison might fail if length differs
-                // Convert to BigInt for safety
-                const currentTs = BigInt(intent.timestamp);
-                const lastTs = BigInt(lastState.updatedAt);
-
-                if (currentTs < lastTs) {
-                    throw new Error("Time Violation: Monotonicity Breach");
-                }
-            }
-
-            // 4. Commit SUCCESS to Audit Log
-            const logEntry = this.auditLog.append(intent, 'SUCCESS');
-
-            // 5. Update State
-            const prevStateHash = lastState ? lastState.stateHash : '0000000000000000000000000000000000000000000000000000000000000000';
-            const stateHash = hash(prevStateHash + logEntry.hash);
-
-            const newState: StateValue = {
-                value: payload.value,
-                updatedAt: intent.timestamp,
-                evidenceHash: logEntry.hash,
-                stateHash: stateHash
-            };
-
-            this.state.set(payload.metricId, newState);
-            if (!this.history.has(payload.metricId)) this.history.set(payload.metricId, []);
-            this.history.get(payload.metricId)?.push(newState);
+            // 2. Delegate to common application logic
+            this.applyTrusted(intent.payload, intent.timestamp, intent.principalId, intent.intentId);
 
         } catch (e: any) {
-            // Gap 5: Log Failure
-            // Only log if we have a halfway valid structure? 
-            // If signature is bad, logging the intent might be spam.
-            // But spec says "Accountability must log attempts".
-            // We append with FAILURE status.
             console.warn(`State Transition Failed: ${e.message}`);
             this.auditLog.append(intent, 'FAILURE');
-            throw e; // Re-throw to inform caller/sim
+            throw e;
         }
+    }
+
+    /**
+     * Applies a state transition without signature verification.
+     * Use ONLY from trusted sources (e.g., Kernel after verification, Internal Engines).
+     */
+    public applyTrusted(payload: MetricPayload, timestamp: string, principalId: string = 'system', intentId?: string): Intent {
+        if (!payload?.metricId) throw new Error("Missing Metric ID");
+
+        // 1. Validate Payload
+        const def = this.registry.get(payload.metricId);
+        if (!def) throw new Error(`Unknown metric: ${payload.metricId}`);
+        if (def.validator && !def.validator(payload.value)) throw new Error("Invalid Value");
+
+        // 2. Monotonic Time Check
+        const lastState = this.state.get(payload.metricId);
+        if (lastState) {
+            const current = LogicalTimestamp.fromString(timestamp);
+            const last = LogicalTimestamp.fromString(lastState.updatedAt);
+
+            if (current.time < last.time || (current.time === last.time && current.logical < last.logical)) {
+                throw new Error("Time Violation: Monotonicity Breach");
+            }
+        }
+
+        // 3. Construct dummy intent for logging if not provided
+        const intent: Intent = {
+            intentId: intentId || hash(`trusted:${principalId}:${payload.metricId}:${timestamp}:${Math.random()}`),
+            principalId,
+            payload,
+            timestamp,
+            expiresAt: '0',
+            signature: 'TRUSTED'
+        };
+
+        // 4. Commit SUCCESS to Audit Log
+        const logEntry = this.auditLog.append(intent, 'SUCCESS');
+
+        // 5. Update State
+        const prevStateHash = lastState ? lastState.stateHash : '0000000000000000000000000000000000000000000000000000000000000000';
+        const stateHash = hash(prevStateHash + logEntry.hash);
+
+        const newState: StateValue = {
+            value: payload.value,
+            updatedAt: timestamp,
+            evidenceHash: logEntry.hash,
+            stateHash: stateHash
+        };
+
+        this.state.set(payload.metricId, newState);
+        if (!this.history.has(payload.metricId)) this.history.set(payload.metricId, []);
+        this.history.get(payload.metricId)?.push(newState);
+
+        return intent;
     }
 
     public get(id: string) { return this.state.get(id)?.value; }

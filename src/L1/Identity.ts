@@ -1,6 +1,7 @@
 
 // src/L1/Identity.ts
-import { verifySignature, Ed25519PublicKey, Signature } from '../L0/Crypto';
+import { verifySignature } from '../L0/Crypto.js';
+import type { Ed25519PublicKey, Signature } from '../L0/Crypto.js';
 
 export type PrincipalId = string; // DID or UUID (derived from PubKey?)
 

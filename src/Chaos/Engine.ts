@@ -1,7 +1,11 @@
 
-import { StateModel, EvidenceGenerator } from '../L1/Truth';
-import { Principal, LogicalTimestamp } from '../L0/Kernel';
-import { Action, SimulationEngine } from '../L3/Simulation';
+import { StateModel } from '../L2/State.js';
+import type { MetricPayload } from '../L2/State.js';
+import { IntentFactory } from '../L2/IntentFactory.js';
+import { LogicalTimestamp } from '../L0/Kernel.js';
+import type { Principal } from '../L1/Identity.js';
+import { SimulationEngine } from '../L3/Simulation.js';
+import type { Action } from '../L3/Simulation.js';
 
 export class ChaosBudget {
     constructor(private limit: number, private currentSpend: number = 0) { }
@@ -68,7 +72,7 @@ export class ChaosEngine {
         const currentVal = Number(this.state.get(action.targetMetricId) || 0);
         const newVal = currentVal + action.valueMutation;
 
-        const ev = EvidenceGenerator.create(action.targetMetricId, newVal, authority, time);
-        this.state.apply(ev);
+        // Using applyTrusted for internal chaos injection
+        this.state.applyTrusted({ metricId: action.targetMetricId, value: newVal }, time.toString(), authority.id);
     }
 }
