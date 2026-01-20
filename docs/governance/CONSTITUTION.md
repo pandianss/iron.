@@ -65,16 +65,70 @@ Delegation SHALL be explicit, restrictive, and monotonic. No identity MAY delega
 
 ---
 
-## Article IV — State and Governed Truth
+## Article IV — Governed State and Truth
 
-### Section 4.1 — Materialization of Acts
-Governed state (Truth) is the persistent materialization of all committed governance acts. IRON SHALL recognize only state changes that are kernel-mediated and accountability-linked.
+### Section 4.1 — Constitutional Status of Governed State
+Governed state is the totality of information upon which IRON execution, authority, protocol behavior, and mutation validity depend. All governed state SHALL be kernel-owned, kernel-maintained, and kernel-mutated exclusively under the Execution Law. No other form of state may influence governance, authority, execution, or outcomes. Any state influencing system behavior that is not governed state is constitutionally forbidden.
 
-### Section 4.2 — Exclusivity of Truth
-The Kernel SHALL be the sole authority for maintaining Governed Truth. Any representation of state that diverges from the Kernel’s internal stores is constitutionally invalid.
+### Section 4.2 — Closed Ontology of Governed State
+The ontology of governed state is closed. Governed state SHALL consist exclusively of the following constitutional classes:
+- Identity state
+- Authority derivation state
+- Time state
+- Budget state
+- Governed resource state
+- Protocol-local state
+- Attempt and outcome state
+- Accountability log state
 
-### Section 4.3 — Isolation of Governed Truth
-The Kernel SHALL prevent direct access to the Truth Store. All modifications SHALL occur exclusively through the Commit phase of the Execution Law. Protocols SHALL observe only kernel-supplied snapshots of truth.
+No additional governed state classes may be introduced. Any system maintaining additional execution-relevant state outside these classes is non-compliant.
+
+### Section 4.3 — Governed Resource Classes
+Governed resources SHALL be limited to the following constitutional resource classes:
+- Metrics
+- Commitments
+- Assets
+- Access bindings
+
+These classes define the full surface upon which protocols may operate. No protocol may create, observe, or mutate any governed resource outside these classes. Any additional domain constructs SHALL be representable strictly as instances of these classes.
+
+### Section 4.4 — Truth Definition
+Truth in IRON SHALL mean the complete kernel state derivable by lawful replay of the accountability log under the Execution Law and Identity Algebra. No external database, cache, index, model, or representation SHALL be authoritative. Any representation not derivable from the accountability log is non-truth.
+
+### Section 4.5 — Log Supremacy
+The accountability log SHALL be the sole authoritative record of truth transitions. All governed state at any moment SHALL be exactly the state produced by:
+1. Initializing the system from genesis, and
+2. Replaying the accountability log deterministically under the Execution Law.
+
+No other reconstruction method is constitutionally admissible. Any state not reconstructible from the log is constitutionally invalid.
+
+### Section 4.6 — No Hidden State
+No state, signal, cache, heuristic, model, index, or derived structure may influence kernel behavior, authorization, protocol execution, mutation validity, or commit ordering unless it is either:
+1. governed state, or
+2. a deterministic derivative of governed state whose complete derivation is logged and reproducible.
+
+Any hidden or non-derivable state constitutes a constitutional violation.
+
+### Section 4.7 — Truth Non-Forking
+There SHALL exist exactly one authoritative truth. No system component may maintain parallel truths, shadow truths, speculative authoritative truths, or forked authoritative histories. Simulation outputs SHALL be explicitly non-authoritative. Any mechanism allowing multiple authoritative realities is constitutionally invalid.
+
+### Section 4.8 — Truth and Observation
+All authoritative observation of IRON SHALL derive from governed state. No interface, analytics system, or external service SHALL be constitutionally relied upon unless its outputs are derivable from governed state. No decision, guard, or execution path SHALL depend on ungoverned observations.
+
+### Section 4.9 — Protocol State
+Protocol-local state SHALL be governed state. Protocol-local state SHALL:
+- Be namespaced per protocol
+- Be accessible only to the kernel and the owning protocol
+- Be mutated only through Commit
+- Be fully reconstructible from the accountability log
+
+No protocol-local state may exist outside kernel control.
+
+### Section 4.10 — Formal Binding
+All governed state semantics SHALL conform exactly to the formal Kernel State Machine (Annex A) and Identity Algebra (Annex B). Any implementation admitting state models not permitted by those annexes is non-compliant.
+
+### Section 4.11 — Closure Clause
+No amendment may introduce new governed state classes, permit hidden execution-relevant state, weaken log supremacy, or permit parallel authoritative truths. Any such amendment constitutes a new system and SHALL NOT be labeled IRON.
 
 ---
 
