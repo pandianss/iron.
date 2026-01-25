@@ -87,3 +87,15 @@
     - [x] Map Checks: Invariant -> Guard -> Test
     - [x] Implement Property-Based Fuzzer (Chaos)
     - [x] Verify Failure Semantics (Reject vs Halt)
+
+## Stratum IV: Risk Engine & Console (Final Delivery)
+- [x] **Risk & Obligation Engine**
+    - [x] `RiskRegistry.ts` (Track Compliance & Risk)
+    - [x] Standard Protocols (`ISO27001`, `FinancialControls`)
+- [x] **Protocol Studio**
+    - [x] JSON DSL Editor
+    - [x] Simulation Integration
+- [x] **Console UI**
+    - [x] Dashboard (Metrics)
+    - [x] Risk Heatmap
+    - [x] Studio Tab

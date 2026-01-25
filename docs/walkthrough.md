@@ -52,5 +52,15 @@ PASS  src/__tests__/System.test.ts
     √ Chaos Fuzzer Run (10 ms)
 ```
 
+```
+
+## Extension: Stratum IV (Risk & Ecosystem)
+The system now includes an **Obligation Engine** and **Protocol Studio**:
+- **RiskRegistry**: Maps `Obligations` (e.g., ISO27001) to `Controls` and tracks real-time compliance.
+- **Console**: Provides a unified UI for:
+  1.  **Dashboard**: Live Kernel State & Metrics.
+  2.  **Studio**: Authoring and Simulating Protocols in the JSON DSL.
+  3.  **Risk**: Heatmap of compliance status.
+
 ## Conclusion
 The system adheres to the "Iron." specification, "Minimum Cryptographic & Security Specification", and formally verified safety properties.
