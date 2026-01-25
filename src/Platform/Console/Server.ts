@@ -109,7 +109,39 @@ export class ConsoleServer {
                 res.status(500).json({ ok: false, error: e.message });
             }
         });
+
+        // --- IRE: Risk Engine (Stratum IV) ---
+        this.app.get('/api/ire/risks', (req, res) => {
+            const { RiskRegistry } = require('../../Solutions/IRE/RiskRegistry.js');
+            // In real app, singleton registry
+            const registry = new RiskRegistry();
+            res.json({ ok: true, data: registry.getRisks() });
+        });
+
+        this.app.get('/api/ire/compliance', (req, res) => {
+            const { RiskRegistry } = require('../../Solutions/IRE/RiskRegistry.js');
+            const registry = new RiskRegistry();
+
+            // Get Active Protocols from Kernel
+            const protocols = (this.kernel as any).protocols; // ProtocolEngine
+            const activeList: any[] = [];
+            // Access private map via iteration if possible or just use a helper
+            // ProtocolEngine has private map. We need a public getter in ProtocolEngine or cast.
+            // (this.kernel as any).protocols.protocols is the map
+            (protocols as any).protocols.forEach((p: any) => activeList.push(p));
+
+            const risks = registry.getRisks();
+            const scorecard = risks.map((r: any) => ({
+                riskId: r.id,
+                name: r.name,
+                severity: r.severity,
+                mitigated: registry.assessMitigation(activeList, r.id)
+            }));
+
+            res.json({ ok: true, data: scorecard });
+        });
     }
+
 
     public start() {
         this.app.listen(this.port, () => {

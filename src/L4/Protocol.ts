@@ -212,6 +212,9 @@ export class ProtocolEngine {
                 if (pre.operator === '<' && !(current < thresh)) return false;
                 if (pre.operator === '<=' && !(current <= thresh)) return false;
                 if (pre.operator === '==' && !(current === thresh)) return false;
+
+                // Patch: Fail Closed if operator is unknown/unhandled
+                if (!['>', '<', '==', '>=', '<='].includes(pre.operator || '')) return false;
             }
             if (pre.type === 'ALWAYS') return true;
         }
