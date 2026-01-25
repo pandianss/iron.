@@ -124,6 +124,8 @@ describe('GovernanceKernel (Phase II Hardening)', () => {
             mockAudit,
             mockRegistry
         );
+
+        kernel.boot();
     });
 
     const validIntent: Intent = {
@@ -195,10 +197,10 @@ describe('GovernanceKernel (Phase II Hardening)', () => {
             // We can't easily spy on valid 'budget' object method if we don't mock it, 
             // but we can check the 'used' property after.
 
-            const initialUsed = budget.used;
+            const initialConsumed = budget.consumed;
             kernel.commitAttempt(aid, budget);
 
-            expect(budget.used).toBe(initialUsed + 10);
+            expect(budget.consumed).toBe(initialConsumed + 10);
         });
     });
 

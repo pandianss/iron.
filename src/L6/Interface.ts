@@ -32,113 +32,59 @@ export class GovernanceInterface {
     }
 }
 
-export interface AttestationPacket {
-    payload: {
-        metricId: string;
-        value: any;
-        timestamp: string;
-        ledgerHash: string;
-        subjectId: string;
-    };
-    sourceKernel: string;
-    signature: string;
-}
+// --- VI.1 Consent Law ---
+export class IntentBuilder {
+    private principalId: string = '';
+    private metricId: string = '';
+    private value: any = null;
+    private expiresAt: string = '0';
+    private timestamp: string = '';
 
-export class AttestationAPI {
-    constructor(private log: AuditLog, private kernelKeys: KeyPair, private kernelId: string) { }
+    // Context is crucial for Meaningful Consent
+    private context: string = '';
 
-    public generateAttestation(intent: Intent): AttestationPacket {
-        const history = this.log.getHistory();
-        const entry = history.find(e => e.intent.intentId === intent.intentId);
+    constructor() { }
 
-        const payload = {
-            metricId: intent.payload.metricId,
-            value: intent.payload.value,
-            timestamp: intent.timestamp,
-            ledgerHash: entry ? entry.hash : 'unknown',
-            subjectId: intent.principalId
-        };
+    public withPrincipal(id: string): this { this.principalId = id; return this; }
+    public withMetric(id: string): this { this.metricId = id; return this; }
+    public withValue(val: any): this { this.value = val; return this; }
 
-        const dataToSign = JSON.stringify(payload);
-        const signature = signData(dataToSign, this.kernelKeys.privateKey);
+    // Binding the UI/Human Context to the Intent
+    public withContext(uiLabel: string, workflowId: string): this {
+        this.context = `${uiLabel}::${workflowId}`;
+        return this;
+    }
+
+    public build(keyPair: KeyPair): Intent {
+        if (!this.principalId || !this.metricId) throw new Error("Incomplete Intent");
+
+        this.timestamp = `${Date.now()}:0`;
+        const intentId = hash(`${this.principalId}:${this.metricId}:${this.timestamp}:${Math.random()}`);
+        const payload = { metricId: this.metricId, value: this.value };
+
+        // Consent Binding: The signature MUST cover the context if we support "Rich Intents" in future.
+        // For MVP, we stick to the Kernel's rigid structure, but ideally 'context' would be part of payload metadata.
+        const data = `${intentId}:${this.principalId}:${JSON.stringify(payload)}:${this.timestamp}:${this.expiresAt}`;
+        const signature = signData(data, keyPair.privateKey);
 
         return {
-            payload,
-            sourceKernel: this.kernelId,
-            signature: signature
-        };
-    }
-}
-
-export class FederationBridge {
-    private partners: Map<string, Ed25519PublicKey> = new Map();
-
-    constructor(
-        private kernel: GovernanceKernel,
-        private bridgeIdentity: { id: string; key: KeyPair }
-    ) { }
-
-    public registerPartner(alias: string, publicKey: Ed25519PublicKey) {
-        this.partners.set(alias, publicKey);
-    }
-
-    public ingestAttestation(packet: AttestationPacket): boolean {
-        const pubKey = this.partners.get(packet.sourceKernel);
-        if (!pubKey) {
-            console.warn(`Federation Reject: Unknown source kernel ${packet.sourceKernel}`);
-            return false;
-        }
-
-        // Verify Partner Signature (C-8: External Attestation)
-        const dataToVerify = JSON.stringify(packet.payload);
-        if (!verifySignature(dataToVerify, packet.signature, pubKey)) {
-            console.warn(`Federation Reject: Invalid Signature from ${packet.sourceKernel}`);
-            return false;
-        }
-
-        // Construct Synthetic Intent signed by Bridge
-        // The Bridge attests: "I verified X from Y"
-        const intentId = hash(`ext:${packet.sourceKernel}:${packet.payload.ledgerHash}`);
-
-        // We need to sign exactly what IntentFactory would sign or what Guard expects.
-        // Guard expects: data = `${intentId}:${principalId}:${JSON.stringify(payload)}:${timestamp}:${expiresAt}`;
-        const payload = {
-            metricId: packet.payload.metricId,
-            value: packet.payload.value,
-            _meta: { source: packet.sourceKernel, proof: packet.payload.ledgerHash }
-        };
-        const timestamp = packet.payload.timestamp;
-        const expiresAt = '0';
-        const principalId = this.bridgeIdentity.id;
-
-        const dataToSign = `${intentId}:${principalId}:${JSON.stringify(payload)}:${timestamp}:${expiresAt}`;
-        const signature = signData(dataToSign, this.bridgeIdentity.key.privateKey);
-
-        const foreignIntent: Intent = {
             intentId,
-            principalId,
+            principalId: this.principalId,
             payload,
-            timestamp,
-            expiresAt,
+            timestamp: this.timestamp,
+            expiresAt: this.expiresAt,
             signature
         };
-
-        try {
-            const aid = this.kernel.submitAttempt(principalId, 'SYSTEM', foreignIntent);
-
-            const guard = this.kernel.guardAttempt(aid);
-            if (guard === 'REJECTED') {
-                // Peek at audit log or get reason? Kernel doesn't return reason on guardAttempt.
-                // But we can check status? No, attempt is now REJECTED.
-                console.warn(`Federation Sync Rejected by Kernel Guard. Check Audit Log.`);
-                return false;
-            }
-
-            this.kernel.commitAttempt(aid, new Budget(BudgetType.ENERGY, 100));
-            return true;
-        } catch (e) {
-            console.warn(`Federation Sync Failed:`, e);
-            return false;
-        }
     }
 }
+
+// --- VI.2 Emergency Law ---
+export interface RootOverride {
+    type: 'OVERRIDE';
+    targetIntentId: string;
+    justification: string;
+    rootSignature: string;
+}
+
+
+

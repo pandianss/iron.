@@ -47,7 +47,7 @@ export const TimeGuard: Guard<{ currentTs: string, lastTs: string }> = ({ curren
 // 4. Budget
 export const BudgetGuard: Guard<{ budget: Budget, cost: number }> = ({ budget, cost }) => {
     // Check only. Do not consume.
-    if ((budget.limit - budget.used) < cost) return FAIL("Budget Exhausted");
+    if ((budget.limit - budget.consumed) < cost) return FAIL("Budget Exhausted");
     return OK;
 };
 

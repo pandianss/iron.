@@ -1,75 +1,76 @@
 import { verifySignature } from '../L0/Crypto.js';
 import type { Ed25519PublicKey, Signature } from '../L0/Crypto.js';
+import type { Capability } from '../L0/Ontology.js';
 
 export type PrincipalId = string;
 
 // --- 7. Capability Algebra (Meet-Semilattice) ---
-export class Capability {
-    constructor(public readonly name: string) { }
 
-    // ⊑ — partial order (e.g., ASSET.MOVE ⊑ ASSET, METRIC:A ⊑ METRIC)
-    isSubCapabilityOf(other: Capability): boolean {
-        if (this.name === other.name) return true;
-        if (other.name === '*') return true;
+export class CapabilityAlgebra {
+    // ⊑ — partial order (is child a subset of parent?)
+    static isSubCapability(child: Capability, parent: Capability): boolean {
+        // 1. Action Check (e.g. METRIC.WRITE ⊆ *)
+        const actionMatch = parent.action === '*' || child.action === parent.action ||
+            (parent.action.endsWith('*') && child.action.startsWith(parent.action.slice(0, -1)));
 
-        // Handle wildcards like "GOVERNANCE:*" or "METRIC.*"
-        if (other.name.endsWith(':*') || other.name.endsWith('.*')) {
-            const prefix = other.name.slice(0, -2);
-            return this.name === prefix || this.name.startsWith(prefix + ':') || this.name.startsWith(prefix + '.');
-        }
+        // 2. Resource Check (e.g. system.load ⊆ *)
+        const resourceMatch = parent.resource === '*' || child.resource === parent.resource ||
+            (parent.resource.endsWith('*') && child.resource.startsWith(parent.resource.slice(0, -1)));
 
-        return this.name.startsWith(other.name + '.') || this.name.startsWith(other.name + ':');
+        // 3. Constraint Check (Not fully impl in MVP, assume parent constraint implies child constraint if present)
+        // For now: strict equality or parent has no constraint
+        const constraintMatch = !parent.constraint || parent.constraint === child.constraint;
+
+        return actionMatch && resourceMatch && constraintMatch;
     }
 }
 
 export class CapabilitySet {
-    private caps: Set<string> = new Set();
+    private caps: Capability[] = [];
 
-    constructor(caps: string[] = []) {
-        caps.forEach(c => this.caps.add(c));
+    constructor(caps: Capability[] = []) {
+        this.caps = [...caps];
     }
 
     // ⊥ — empty scope
     static empty(): CapabilitySet { return new CapabilitySet(); }
 
-    get all(): string[] { return Array.from(this.caps); }
+    get all(): Capability[] { return [...this.caps]; }
 
     // ⊓ — intersection
     intersect(other: CapabilitySet): CapabilitySet {
-        const result = new CapabilitySet();
+        const result: Capability[] = [];
         for (const a of this.caps) {
             for (const b of other.caps) {
-                if (new Capability(a).isSubCapabilityOf(new Capability(b))) {
-                    result.add(a);
-                } else if (new Capability(b).isSubCapabilityOf(new Capability(a))) {
-                    result.add(b);
+                // If A ⊆ B, then A is in the intersection
+                if (CapabilityAlgebra.isSubCapability(a, b)) {
+                    result.push(a);
+                }
+                // If B ⊆ A, then B is in the intersection
+                else if (CapabilityAlgebra.isSubCapability(b, a)) {
+                    result.push(b);
                 }
             }
         }
-        return result;
+        // Deduplicate? For MVP, assume explicit list.
+        return new CapabilitySet(result);
     }
 
     // ⊆ (for verification)
     isSubsetOf(other: CapabilitySet): boolean {
-        for (const cap of this.caps) {
-            let covered = false;
-            for (const parentCap of other.caps) {
-                if (new Capability(cap).isSubCapabilityOf(new Capability(parentCap))) {
-                    covered = true;
-                    break;
-                }
-            }
+        // Every capability in THIS must be covered by at least one capability in OTHER
+        for (const child of this.caps) {
+            const covered = other.caps.some(parent => CapabilityAlgebra.isSubCapability(child, parent));
             if (!covered) return false;
         }
         return true;
     }
 
-    add(cap: string) { this.caps.add(cap); }
-    has(cap: string): boolean {
-        for (const c of this.caps) {
-            if (new Capability(cap).isSubCapabilityOf(new Capability(c))) return true;
-        }
-        return false;
+    add(cap: Capability) { this.caps.push(cap); }
+
+    // Check if this set implies the requested capability
+    implies(cap: Capability): boolean {
+        return this.caps.some(parent => CapabilityAlgebra.isSubCapability(cap, parent));
     }
 }
 
@@ -156,30 +157,7 @@ export class IdentityManager {
     }
 }
 
-// --- Scope Helper (Gap 1) ---
-class ScopeHelper {
-    // Scope Format: "Layer:Resource:Action"
-    // Subset Logic: Child must be equal or more specific?
-    // Actually, Delegator must HAVE the scope to give it.
-    // Delegator Scope: "L2:*" -> Delegate Scope: "L2:Metric:Write" OK.
 
-    static isSubset(childScope: string, parentScope: string): boolean {
-        if (parentScope === '*') return true;
-        if (parentScope === childScope) return true;
-
-        const parentParts = parentScope.split(':');
-        const childParts = childScope.split(':');
-
-        if (parentParts.length > childParts.length) return false;
-
-        for (let i = 0; i < parentParts.length; i++) {
-            if (parentParts[i] !== '*' && parentParts[i] !== childParts[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
 
 // --- Delegation ---
 export interface Delegation {
@@ -211,7 +189,10 @@ export class DelegationEngine {
 
         // Verify Signature
         if (signature !== 'GOVERNANCE_SIGNATURE') {
-            const data = `${delegatorId}:${granteeId}:${JSON.stringify(scope.all)}:${timestamp}`;
+            // Updated serialization for structured capabilities
+            const scopeData = JSON.stringify(scope.all.map(c => `${c.action}:${c.resource}`));
+            const data = `${delegatorId}:${granteeId}:${scopeData}:${timestamp}`;
+
             if (!verifySignature(data, signature, d.publicKey)) {
                 throw new Error("Grant Error: Invalid Signature");
             }
@@ -276,11 +257,15 @@ export class DelegationEngine {
     }
 
     // 8. Kernel Authority Query
-    public authorized(id: PrincipalId, cap: string): boolean {
+    public authorized(id: PrincipalId, capString: string): boolean {
         const p = this.identityManager.get(id);
         if (!p || !p.alive) return false;
 
+        // Parse check string "ACTION:RESOURCE"
+        const [action, resource] = capString.split(':');
+        const cap: Capability = { action: action || '*', resource: resource || '*' };
+
         const effective = this.getEffectiveScope(id);
-        return effective.has(cap);
+        return effective.implies(cap);
     }
 }

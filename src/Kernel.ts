@@ -6,6 +6,7 @@ import type { Mutation } from './L4/Protocol.js';
 import { AuditLog } from './L5/Audit.js';
 import { SignatureGuard, ScopeGuard, TimeGuard, BudgetGuard } from './L0/Guards.js';
 import { Budget, LogicalTimestamp } from './L0/Kernel.js';
+import type { KernelState } from './L0/Ontology.js';
 
 export type AttemptID = string;
 export type AttemptStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'COMMITTED' | 'ABORTED';
@@ -32,6 +33,8 @@ export interface Commit {
 export class GovernanceKernel {
     private attempts: Map<AttemptID, Attempt> = new Map();
 
+    private lifecycle: KernelState = 'UNINITIALIZED';
+
     constructor(
         private identity: IdentityManager,
         private delegation: DelegationEngine,
@@ -39,7 +42,54 @@ export class GovernanceKernel {
         private protocols: ProtocolEngine,
         private audit: AuditLog,
         private registry: MetricRegistry
-    ) { }
+    ) {
+        this.transition('CONSTITUTED');
+    }
+
+    public get Lifecycle() { return this.lifecycle; }
+
+    /**
+     * II.2 State Transition Law
+     */
+    private transition(to: KernelState) {
+        const from = this.lifecycle;
+
+        // Illegal Transitions
+        if (from === 'VIOLATED' && to === 'ACTIVE') throw new Error("Kernel Error: Cannot transition VIOLATED -> ACTIVE directly. Must RECOVER.");
+        if (from === 'DISSOLVED') throw new Error("Kernel Error: Kernel is DISSOLVED. No further transitions allowed.");
+
+        // Valid Transitions (Implicitly allowed if not rejected above? No, explicit allow list needed for high assurance)
+        const allowed = {
+            'UNINITIALIZED': ['CONSTITUTED'],
+            'CONSTITUTED': ['ACTIVE'],
+            'ACTIVE': ['SUSPENDED', 'VIOLATED', 'DISSOLVED'],
+            'SUSPENDED': ['ACTIVE', 'DISSOLVED'],
+            'VIOLATED': ['RECOVERED', 'DISSOLVED'],
+            'RECOVERED': ['ACTIVE', 'SUSPENDED'],
+            'DISSOLVED': []
+        } as Record<KernelState, KernelState[]>;
+
+        if (!allowed[from].includes(to)) {
+            // Special case logic or just strictly throw?
+            // "Initial -> Constituted" happens in constructor.
+            // If we are currently Uninitialized, and target is Constituted, it's allowed.
+        }
+
+        // Strict FSM Check
+        if (from !== 'UNINITIALIZED' && !allowed[from].includes(to)) {
+            throw new Error(`Kernel Violation: Illegal State Transition ${from} -> ${to}`);
+        }
+
+        this.lifecycle = to;
+    }
+
+    public boot() {
+        if (this.lifecycle === 'CONSTITUTED') {
+            this.transition('ACTIVE');
+        }
+    }
+
+    // ... (Accessors)
 
     public get State() { return this.state; }
     public get Registry() { return this.registry; }
@@ -52,6 +102,9 @@ export class GovernanceKernel {
         intent: Intent,
         cost: Nat = 1
     ): AttemptID {
+        if (this.lifecycle !== 'ACTIVE') {
+            throw new Error(`Kernel Error: Cannot submit attempt in state ${this.lifecycle}`);
+        }
         const attempt: Attempt = {
             id: intent.intentId,
             actor,
@@ -69,6 +122,8 @@ export class GovernanceKernel {
 
     // 3.2 Guard Attempt (Invariant I: Authority)
     public guardAttempt(attemptId: AttemptID): 'ACCEPTED' | 'REJECTED' {
+        if (this.lifecycle !== 'ACTIVE') throw new Error(`Kernel Error: Cannot guard attempt in state ${this.lifecycle}`);
+
         const attempt = this.attempts.get(attemptId);
         if (!attempt) throw new Error("Kernel Error: Attempt not found");
 
@@ -106,6 +161,8 @@ export class GovernanceKernel {
 
     // 3.3 Commit Attempt (Invariant II & III)
     public commitAttempt(attemptId: AttemptID, budget: Budget): Commit {
+        if (this.lifecycle !== 'ACTIVE') throw new Error(`Kernel Error: Cannot commit in state ${this.lifecycle}`);
+
         const attempt = this.attempts.get(attemptId);
         if (!attempt || attempt.status !== 'ACCEPTED') {
             throw new Error(`Kernel Error: Attempt ${attemptId} not in ACCEPTED state`);
@@ -178,7 +235,14 @@ export class GovernanceKernel {
     public grantDelegation(actor: string, granter: string, grantee: string, scope: string[], expiresAt: number): void {
         this.checkGovernanceAuth(actor, 'IDENTITY.DELEGATE');
         const sig = 'GOVERNANCE_SIGNATURE';
-        this.delegation.grant(granter, grantee, new CapabilitySet(scope), expiresAt.toString(), sig);
+
+        // Map string[] to Capability[]
+        const caps = scope.map(s => {
+            const [action, resource] = s.split(':');
+            return { action: action || '*', resource: resource || '*' };
+        });
+
+        this.delegation.grant(granter, grantee, new CapabilitySet(caps), expiresAt.toString(), sig);
         this.audit.append(this.createSystemIntent(actor, 'system.delegation', { granter, grantee, scope }), 'SUCCESS');
     }
 
@@ -190,9 +254,50 @@ export class GovernanceKernel {
     }
 
     private checkGovernanceAuth(actor: string, action: string) {
+        // authorized accepts string "ACTION:RESOURCE" and parses internally
         if (!this.delegation.authorized(actor, `GOVERNANCE:${action}`)) {
             throw new Error(`Kernel Reject: Actor ${actor} not authorized for ${action}`);
         }
+    }
+
+    // VI.2 Emergency Law: Root Override
+    public override(intent: Intent, rootSignature: string, justification: string): Commit {
+        if (this.lifecycle !== 'ACTIVE') throw new Error("Kernel is not ACTIVE");
+
+        // 1. Verify Root Authority (The Physics of Power cannot be bypassed)
+        // Check if actor is Root
+        // For MVP, we assume a "ROOT" capability or specific ID check
+        // Ideally: checkGovernanceAuth(intent.principalId, 'KERNEL.OVERRIDE')
+        if (!this.delegation.authorized(intent.principalId, 'GOVERNANCE:OVERRIDE')) {
+            throw new Error("Override Violation: Actor is not authorized for GOVERNANCE:OVERRIDE");
+        }
+
+        // 2. Submit as System Attempt (Bypasses Protocol Binding Check in Guard?)
+        // No, we need a special path. 
+        // Standard Submit
+        const aid = this.submitAttempt(intent.principalId, 'SYSTEM', intent);
+        const attempt = this.attempts.get(aid)!;
+
+        // 3. Selective Guarding (Bypass Protocol, Enforce Physics)
+        // I.a Signature (Identity) - MUST HOLD
+        const sigResult = SignatureGuard({ intent: attempt.intent, manager: this.identity });
+        if (!sigResult.ok) throw new Error(`Override Violation: Invalid Identity Signature`);
+
+        // I.b Scope - MUST HOLD (Root must have scope over target metric)
+        const targetMetric = attempt.intent.payload.metricId;
+        const scopeResult = ScopeGuard({
+            actor: attempt.actor,
+            capability: `METRIC.WRITE:${targetMetric}`,
+            engine: this.delegation
+        });
+        if (!scopeResult.ok) throw new Error(`Override Violation: Insufficient Scope`);
+
+        // Skip Protocol Binding (The Override)
+        attempt.status = 'ACCEPTED';
+        this.audit.append(intent, 'SUCCESS', `OVERRIDE: ${justification}`);
+
+        // 4. Commit (Enforce Budget)
+        return this.commitAttempt(aid, new Budget('RISK' as any, 1000));
     }
 
     private reject(attempt: Attempt, reason: string) {

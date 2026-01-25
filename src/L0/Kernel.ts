@@ -82,15 +82,15 @@ export enum BudgetType {
 }
 
 export class Budget {
-    constructor(public type: BudgetType, public limit: number, public used: number = 0) { }
+    constructor(public type: BudgetType, public limit: number, public consumed: number = 0) { }
 
     public consume(amount: number): boolean {
-        if (this.used + amount > this.limit) return false;
-        this.used += amount;
+        if (this.consumed + amount > this.limit) return false;
+        this.consumed += amount;
         return true;
     }
 
     public reset(): void {
-        this.used = 0;
+        this.consumed = 0;
     }
 }

@@ -21,13 +21,58 @@ export class ProtocolEngine {
 
     constructor(private state: StateModel) { }
 
+    // V.1 Creation Law: All protocols start as PROPOSED
+    propose(p: Protocol): string {
+        ExtensionValidator.validate(p);
+        p.lifecycle = 'PROPOSED';
+
+        // ID Generation if missing (should be deterministic based on content ideally)
+        if (!p.id) p.id = hash(JSON.stringify(p));
+
+        this.protocols.set(p.id, p);
+        return p.id;
+    }
+
+    // V.1 Ratification (Requires Governance Signature)
+    ratify(id: string, signature: string): void {
+        const p = this.protocols.get(id);
+        if (!p) throw new Error("Protocol not found");
+        if (p.lifecycle !== 'PROPOSED') throw new Error(`Cannot ratify protocol in state ${p.lifecycle}`);
+
+        // TODO: Verify signature against Governance Key (Mocked for now or passed in context)
+        // verifySignature(id, signature, GOV_KEY)
+
+        p.lifecycle = 'RATIFIED';
+    }
+
+    // V.1 Activation (Boot or Dynamic)
+    activate(id: string): void {
+        const p = this.protocols.get(id);
+        if (!p) throw new Error("Protocol not found");
+        if (p.lifecycle !== 'RATIFIED') throw new Error(`Cannot activate: Protocol must be RATIFIED first (Current: ${p.lifecycle})`);
+
+        p.lifecycle = 'ACTIVE';
+    }
+
+    // V.2 Death Law
+    deprecate(id: string): void {
+        const p = this.protocols.get(id);
+        if (!p) return;
+        p.lifecycle = 'DEPRECATED';
+    }
+
+    revoke(id: string): void {
+        const p = this.protocols.get(id);
+        if (!p) return;
+        p.lifecycle = 'REVOKED';
+    }
+
     isRegistered(id: string): boolean {
         return this.protocols.has(id);
     }
 
-    register(p: Protocol) {
-        ExtensionValidator.validate(p);
-        this.protocols.set(p.id!, p);
+    get(id: string): Protocol | undefined {
+        return this.protocols.get(id);
     }
 
     loadBundle(bundle: ProtocolBundle, trustScope: string) {
@@ -84,7 +129,14 @@ export class ProtocolEngine {
         // Apply
         bundle.protocols.forEach(p => {
             const id = p.id || `${bundle.bundleId}.${p.name}`;
-            this.protocols.set(id, p);
+            p.id = id;
+
+            // Trusted Bundle Loading: Auto-Verify flow
+            this.propose(p);
+            // Bundles are considered pre-ratified by the bundle signature
+            // But we must manually transition them for internal consistency
+            this.ratify(id, 'BUNDLE_SIG_ALREADY_CHECKED');
+            this.activate(id);
         });
     }
 
@@ -111,7 +163,12 @@ export class ProtocolEngine {
         const allMutations: Mutation[] = [];
 
         for (const p of this.protocols.values()) {
+            if (p.lifecycle !== 'ACTIVE' && p.lifecycle !== 'DEPRECATED') continue;
+
             if (this.checkPreconditions(p, proposed)) {
+                if (p.lifecycle === 'DEPRECATED') {
+                    console.warn(`[Iron] Warning: Executing DEPRECATED protocol ${p.id}`);
+                }
                 triggered.push(p);
             }
         }

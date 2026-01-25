@@ -65,6 +65,7 @@ export interface Protocol {
     id?: string;
     name: string;
     version: SemanticVersion;
+    lifecycle?: ProtocolLifecycle; // Defaults to PROPOSED if undefined
 
     // Commercial Props
     category: ProtocolCategory;

@@ -9,6 +9,7 @@ export interface LogEntry {
     intent: Intent;
     status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT' | 'REJECT' | 'ABORTED';
     reason?: string;
+    timestamp: number; // Wall clock time of logging
 }
 
 export class AuditLog {
@@ -17,13 +18,22 @@ export class AuditLog {
 
     public append(intent: Intent, status: 'SUCCESS' | 'FAILURE' | 'ATTEMPT' | 'REJECT' | 'ABORTED' = 'SUCCESS', reason?: string): LogEntry {
         const previousHash = this.chain.length > 0 ? this.chain[this.chain.length - 1]!.hash : this.genesisHash;
-        const entryHash = this.calculateHash(previousHash, intent, status, reason);
+        const lastTs = this.chain.length > 0 ? this.chain[this.chain.length - 1]!.timestamp : 0;
+        const now = Date.now();
+
+        // IV.2 Temporal Law: Monotonicity
+        if (now < lastTs) {
+            throw new Error("Audit Violation: Temporal integrity breached (Time moved backwards)");
+        }
+
+        const entryHash = this.calculateHash(previousHash, intent, status, now, reason);
 
         const entry: LogEntry = {
             hash: entryHash,
             previousHash: previousHash,
             intent: intent,
             status: status,
+            timestamp: now,
             ...(reason ? { reason } : {})
         };
 
@@ -33,19 +43,33 @@ export class AuditLog {
 
     public getHistory(): LogEntry[] { return [...this.chain]; }
 
-    public verifyIntegrity(): boolean {
+    // IV.3 Historical Legitimacy
+    public verifyChain(): boolean {
         let prev = this.genesisHash;
+        let lastTs = 0;
+
         for (const entry of this.chain) {
+            // 1. Linkage Check
             if (entry.previousHash !== prev) return false;
-            const h = this.calculateHash(prev, entry.intent, entry.status);
+
+            // 2. Hash Check
+            const h = this.calculateHash(prev, entry.intent, entry.status, entry.timestamp, entry.reason);
             if (h !== entry.hash) return false;
+
+            // 3. Time Check
+            if (entry.timestamp < lastTs) return false;
+
             prev = entry.hash;
+            lastTs = entry.timestamp;
         }
         return true;
     }
 
-    private calculateHash(prevHash: string, intent: Intent, status: string, reason?: string): string {
-        const data = prevHash + JSON.stringify(intent) + status + (reason || '');
+    // Alias for compatibility
+    public verifyIntegrity(): boolean { return this.verifyChain(); }
+
+    private calculateHash(prevHash: string, intent: Intent, status: string, timestamp: number, reason?: string): string {
+        const data = prevHash + JSON.stringify(intent) + status + timestamp + (reason || '');
         return hash(data);
     }
 }
