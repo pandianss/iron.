@@ -1,15 +1,25 @@
-
 // src/L0/Crypto.ts
-import { createHash, generateKeyPairSync, sign, verify, randomBytes } from 'crypto';
+import * as ed from '@noble/ed25519';
+import { sha512 } from '@noble/hashes/sha512';
+import { sha256 } from '@noble/hashes/sha256';
+import { blake3 } from '@noble/hashes/blake3';
+import { randomBytes } from 'crypto';
 
-// 1.1 Hash Function (SHA-256)
+// Configure Sync SHA512 for Ed25519
+ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
+
+// 1.1 Hash Function (SHA-256 for compatibility, Blake3 for State)
 export function hash(data: string): string {
-    return createHash('sha256').update(data).digest('hex');
+    return Buffer.from(sha256(Buffer.from(data, 'utf-8'))).toString('hex');
+}
+
+export function hashState(data: Uint8Array): string {
+    return Buffer.from(blake3(data)).toString('hex');
 }
 
 // 1.2 Digital Signatures (Ed25519)
 export type Ed25519PublicKey = string; // Hex encoded
-export type Ed25519PrivateKey = string; // Hex encoded (for testing/chaos)
+export type Ed25519PrivateKey = string; // Hex encoded
 export type Signature = string; // Hex encoded
 
 export interface KeyPair {
@@ -18,29 +28,26 @@ export interface KeyPair {
 }
 
 export function generateKeyPair(): KeyPair {
-    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const privateKey = ed.utils.randomPrivateKey();
+    const publicKey = ed.getPublicKey(privateKey);
     return {
-        publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(), // Store as PEM for Node compat or Raw Hex?
-        // Node's crypto.sign/verify handles KeyObjects or PEM strings well. 
-        // Spec says "valid Ed25519PublicKey". Usually strict 32-byte hex.
-        // Node's internal representation is opaque unless exported.
-        // For simplicity and interop, let's keep PEM string internally for Node, 
-        // but if the spec implies raw bytes, we might need conversion.
-        // Let's stick to PEM strings for this implementation as it's standard Node.
-        privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+        publicKey: Buffer.from(publicKey).toString('hex'),
+        privateKey: Buffer.from(privateKey).toString('hex')
     };
 }
 
-// Helper to get raw hex if needed? 
-// For now, "Ed25519PublicKey" alias = string (PEM).
-
-export function signData(data: string, privateKeyPem: string): Signature {
-    return sign(null, Buffer.from(data), privateKeyPem).toString('hex');
+export function signData(data: string, privateKeyHex: string): Signature {
+    const signature = ed.sign(Buffer.from(data, 'utf-8'), privateKeyHex);
+    return Buffer.from(signature).toString('hex');
 }
 
-export function verifySignature(data: string, signature: Signature, publicKeyPem: string): boolean {
+export function verifySignature(data: string, signature: Signature, publicKeyHex: string): boolean {
     try {
-        return verify(null, Buffer.from(data), publicKeyPem, Buffer.from(signature, 'hex'));
+        return ed.verify(
+            signature,
+            Buffer.from(data, 'utf-8'),
+            publicKeyHex
+        );
     } catch (e) {
         return false;
     }

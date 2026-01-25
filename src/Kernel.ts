@@ -236,6 +236,7 @@ export class GovernanceKernel {
             };
 
         } catch (e: any) {
+            console.error("Kernel Commit Error:", e);
             attempt.status = 'ABORTED';
             this.audit.append(attempt.action, 'ABORTED', e.message);
             throw new Error(`Kernel Halt: Commit Failed: ${e.message}`);

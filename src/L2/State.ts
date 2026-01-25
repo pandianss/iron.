@@ -1,9 +1,11 @@
 // src/L2/State.ts
+import { produce } from 'immer';
 import type { EntityID } from '../L0/Ontology.js';
 import { IdentityManager } from '../L1/Identity.js';
-import { verifySignature, hash } from '../L0/Crypto.js';
+import { verifySignature, hash, hashState } from '../L0/Crypto.js';
 import { AuditLog } from '../L5/Audit.js';
 import { LogicalTimestamp } from '../L0/Kernel.js';
+
 
 // --- Action ---
 export interface ActionPayload {
@@ -48,18 +50,49 @@ export interface StateValue<T = any> {
     value: T;
     updatedAt: string; // Timestamp from Intent
     evidenceHash: string; // Link to Audit Log Entry
-    stateHash: string; // SHA256(PrevStateHash + LogEntryHash)
+    stateHash: string; // Global State Hash at this point
+}
+
+export interface KernelState {
+    metrics: Record<string, StateValue>;
+    version: number;
+    lastUpdate: string;
+}
+
+export interface StateSnapshot {
+    state: KernelState;
+    hash: string;
+    previousHash: string;
+    actionId: string;
 }
 
 export class StateModel {
-    private state: Map<string, StateValue> = new Map();
-    private history: Map<string, StateValue[]> = new Map();
+    private currentState: KernelState = {
+        metrics: {},
+        version: 0,
+        lastUpdate: '0:0'
+    };
+
+    // Merkle Chain of State
+    private snapshots: StateSnapshot[] = [];
+
+    // Legacy history view (derived)
+    private historyCache: Map<string, StateValue[]> = new Map();
 
     constructor(
         private auditLog: AuditLog,
         private registry: MetricRegistry,
         private identityManager: IdentityManager
-    ) { }
+    ) {
+        // Init Genesis Snapshot
+        const genesisHash = hash("GENESIS");
+        this.snapshots.push({
+            state: this.currentState,
+            hash: genesisHash,
+            previousHash: '0000000000000000000000000000000000000000000000000000000000000000',
+            actionId: 'genesis'
+        });
+    }
 
     public apply(action: Action): void {
         try {
@@ -71,6 +104,12 @@ export class StateModel {
             const data = `${action.actionId}:${action.initiator}:${JSON.stringify(action.payload)}:${action.timestamp}:${action.expiresAt}`;
 
             if (!verifySignature(data, action.signature, entity.publicKey)) {
+                console.log("[DEBUG] Signature Fail:");
+                console.log("Data:", data);
+                console.log("Sig:", action.signature);
+                console.log("PubKey:", entity.publicKey);
+                // Check if it's a "trusted" system key (bypass for mocked tests if needed, but risky)
+                // For Phase 1 strictness: Fail hard.
                 throw new Error("Invalid Action Signature");
             }
 
@@ -92,14 +131,13 @@ export class StateModel {
     }
 
     /**
-     * Applies a state transition without signature verification.
-     * Use ONLY from trusted sources (e.g., Kernel after verification, Internal Engines).
+     * Applies a state transition and creates a cryptographic snapshot.
      */
     public applyTrusted(payload: ActionPayload, timestamp: string, initiator: string = 'system', actionId?: string): Action {
         this.validateMutation(payload);
 
         // 2. Monotonic Time Check
-        const lastState = this.state.get(payload.metricId);
+        const lastState = this.currentState.metrics[payload.metricId];
         if (lastState) {
             const current = LogicalTimestamp.fromString(timestamp);
             const last = LogicalTimestamp.fromString(lastState.updatedAt);
@@ -109,9 +147,10 @@ export class StateModel {
             }
         }
 
-        // 3. Construct action record for logging if not provided
+        const validActionId = actionId || hash(`trusted:${initiator}:${payload.metricId}:${timestamp}:${Math.random()}`);
+
         const action: Action = {
-            actionId: actionId || hash(`trusted:${initiator}:${payload.metricId}:${timestamp}:${Math.random()}`),
+            actionId: validActionId,
             initiator,
             payload,
             timestamp,
@@ -119,27 +158,72 @@ export class StateModel {
             signature: 'TRUSTED'
         };
 
-        // 4. Commit SUCCESS to Audit Log
+        // 3. Commit SUCCESS to Audit Log
         const logEntry = this.auditLog.append(action, 'SUCCESS');
 
-        // 5. Update State
-        const prevStateHash = lastState ? lastState.stateHash : '0000000000000000000000000000000000000000000000000000000000000000';
-        const stateHash = hash(prevStateHash + logEntry.evidenceId);
+        // 4. Calculate New State (Immutable Transition)
+        const previousSnapshot = this.snapshots[this.snapshots.length - 1];
+        if (!previousSnapshot) throw new Error("Critical: Genesis Block Missing");
 
-        const newState: StateValue = {
-            value: payload.value,
-            updatedAt: timestamp,
-            evidenceHash: logEntry.evidenceId,
-            stateHash: stateHash
+        // Calculate the local transition hash for the metric
+        const prevStateHash = lastState ? lastState.stateHash : '0000000000000000000000000000000000000000000000000000000000000000';
+        const transitionHash = hash(prevStateHash + logEntry.evidenceId);
+
+        const finalState = produce(this.currentState, draft => {
+            const newStateValue: StateValue = {
+                value: payload.value,
+                updatedAt: timestamp,
+                evidenceHash: logEntry.evidenceId,
+                stateHash: transitionHash
+            };
+            draft.metrics[payload.metricId] = newStateValue;
+            draft.version++;
+            draft.lastUpdate = timestamp;
+        });
+
+        // 5. Calculate Global Merkle Root over all metrics
+        const allMetrics = Object.entries(finalState.metrics).sort((a, b) => a[0].localeCompare(b[0]));
+        // Hash of all transition hashes
+        const globalStateParams = allMetrics.map(([k, v]) => `${k}:${v.stateHash}`).join('|');
+        const globalRoot = hashState(Buffer.from(globalStateParams + finalState.version));
+
+        // 6. Create Snapshot
+        const snapshot: StateSnapshot = {
+            state: finalState,
+            hash: globalRoot,
+            previousHash: previousSnapshot.hash,
+            actionId: validActionId
         };
 
-        this.state.set(payload.metricId, newState);
-        if (!this.history.has(payload.metricId)) this.history.set(payload.metricId, []);
-        this.history.get(payload.metricId)?.push(newState);
+        this.snapshots.push(snapshot);
+        this.currentState = finalState;
+
+        // Update Cache
+        if (!this.historyCache.has(payload.metricId)) this.historyCache.set(payload.metricId, []);
+        this.historyCache.get(payload.metricId)?.push(finalState.metrics[payload.metricId]);
 
         return action;
     }
 
-    public get(id: string) { return this.state.get(id)?.value; }
-    public getHistory(id: string) { return this.history.get(id) || []; }
+    public get(id: string) { return this.currentState.metrics[id]?.value; }
+    public getHistory(id: string) { return this.historyCache.get(id) || []; }
+
+    public verifyIntegrity(): boolean {
+        for (let i = 1; i < this.snapshots.length; i++) {
+            const prev = this.snapshots[i - 1];
+            const curr = this.snapshots[i];
+
+            if (!prev || !curr) return false;
+
+            if (curr.previousHash !== prev.hash) return false;
+
+            // Re-hash check
+            const allMetrics = Object.entries(curr.state.metrics).sort((a, b) => a[0].localeCompare(b[0]));
+            const globalStateParams = allMetrics.map(([k, v]) => `${k}:${v.stateHash}`).join('|');
+            const globalRoot = hashState(Buffer.from(globalStateParams + curr.state.version));
+
+            if (globalRoot !== curr.hash) return false;
+        }
+        return true;
+    }
 }

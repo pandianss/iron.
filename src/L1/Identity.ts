@@ -162,21 +162,26 @@ export class AuthorityEngine {
             if (d.expiresAt && currentTime) {
                 const nowVal = BigInt(currentTime.includes(':') ? currentTime.split(':')[0]! : currentTime);
                 const expVal = BigInt(d.expiresAt.includes(':') ? d.expiresAt.split(':')[0]! : d.expiresAt);
-                if (nowVal > expVal) return false;
+                if (nowVal > expVal) {
+                    return false;
+                }
             }
 
             // 2. Jurisdiction match
             const jMatch = (resource === d.jurisdiction || d.jurisdiction === '*' || resource?.startsWith(d.jurisdiction + '.'));
-            if (!jMatch) return false;
+            if (!jMatch) {
+                return false;
+            }
 
             // 3. Capacity Limit Check (Rule 1.2)
             if (d.limits && actionType && actionValue !== undefined) {
                 const limit = d.limits[actionType];
-                if (limit !== undefined && actionValue > limit) return false;
+                if (limit !== undefined && actionValue > limit) {
+                    return false;
+                }
             }
 
             return true;
         });
     }
 }
-
