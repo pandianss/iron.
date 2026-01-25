@@ -68,6 +68,144 @@ export class GovernanceInterface {
             ).slice(-5) // Last 5 steps leadings to breach
         };
     }
+
+    // --- Phase 1: Authority Management (Product 1: DAS) ---
+
+    /**
+     * Register a new entity in the system
+     */
+    public registerEntity(id: EntityID, publicKey: string, type: 'ACTOR' | 'OFFICE' | 'ASSET' | 'SYSTEM' | 'ABSTRACT' = 'ACTOR') {
+        return this.kernel['identity'].register({
+            id,
+            publicKey,
+            type,
+            identityProof: 'USER_REGISTRATION',
+            status: 'ACTIVE',
+            createdAt: `${Date.now()}:0`
+        });
+    }
+
+    /**
+     * Grant authority/delegation to an entity
+     */
+    public grantAuthority(params: {
+        grantee: EntityID;
+        capability: string;
+        targetMetric: string;
+        expiresAt?: string;
+        limits?: Record<string, number>;
+        grantor: EntityID;
+    }) {
+        const authorityId = `auth:${Date.now()}:${Math.random()}`;
+        return this.kernel['authority'].grant(
+            authorityId,
+            params.grantor,
+            params.grantee,
+            params.capability,
+            params.targetMetric,
+            `${Date.now()}:0`,
+            'GOVERNANCE_SIGNATURE',
+            params.expiresAt,
+            params.limits
+        );
+    }
+
+    /**
+     * Revoke a delegation
+     */
+    public revokeAuthority(authorityId: string) {
+        this.kernel['authority'].revoke(authorityId);
+    }
+
+    /**
+     * Check if an entity is authorized for a capability
+     */
+    public checkAuthorization(entityId: EntityID, check: string, context?: { time?: string, value?: number }) {
+        return this.kernel['authority'].authorized(entityId, check, context);
+    }
+
+    /**
+     * List all delegations for an entity
+     */
+    public listDelegations(entityId?: EntityID) {
+        const allDelegations = this.kernel['authority']['delegations'];
+        if (!entityId) return allDelegations;
+        return allDelegations.filter(d => d.grantee === entityId || d.granter === entityId);
+    }
+
+    // --- Phase 1: Protocol Management (Product 3: Policy Gate) ---
+
+    /**
+     * Propose a new protocol/policy
+     */
+    public proposeProtocol(protocol: any) {
+        return this.kernel['protocols'].propose(protocol);
+    }
+
+    /**
+     * Ratify a proposed protocol
+     */
+    public ratifyProtocol(protocolId: string, signature: string) {
+        return this.kernel['protocols'].ratify(protocolId, signature);
+    }
+
+    /**
+     * Activate a ratified protocol
+     */
+    public activateProtocol(protocolId: string) {
+        return this.kernel['protocols'].activate(protocolId);
+    }
+
+    /**
+     * Get protocol details
+     */
+    public getProtocol(protocolId: string) {
+        return this.kernel['protocols'].get(protocolId);
+    }
+
+    /**
+     * List all protocols (optionally filtered by category)
+     */
+    public listProtocols(category?: string) {
+        const protocolsMap = this.kernel['protocols']['protocols'] as Map<string, any>;
+        const allProtocols = Array.from(protocolsMap.values());
+        if (!category) return allProtocols;
+        return allProtocols.filter(p => p.category === category);
+    }
+
+    // --- Phase 1: Enhanced Breach Monitoring ---
+
+    /**
+     * Get breaches by entity
+     */
+    public getBreachesByEntity(entityId: EntityID) {
+        return this.getBreachReports().filter(b => b.initiator === entityId);
+    }
+
+    /**
+     * Get breaches by metric
+     */
+    public getBreachesByMetric(metricId: string) {
+        return this.log.getHistory()
+            .filter(e =>
+                (e.status === 'REJECT' || e.status === 'ABORTED') &&
+                e.action.payload.metricId === metricId
+            )
+            .map(e => ({
+                actionId: e.action.actionId,
+                initiator: e.action.initiator,
+                reason: e.reason,
+                metadata: e.metadata,
+                timestamp: e.timestamp
+            }));
+    }
+
+    /**
+     * Verify audit log integrity
+     */
+    public verifyAuditIntegrity() {
+        return this.log.verifyIntegrity();
+    }
 }
 
 // --- VI.1 Consent Law (Action Builder) ---

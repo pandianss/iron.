@@ -1,11 +1,9 @@
-import { GovernanceInterface } from '../L6/Interface.js';
-import { IntentFactory } from '../L2/IntentFactory.js';
-import type { Ed25519PublicKey, Ed25519PrivateKey } from '../L0/Crypto.js';
-import { hash } from '../L0/Crypto.js';
+import { GovernanceInterface, ActionBuilder } from '../L6/Interface.js';
+import type { Ed25519PrivateKey, KeyPair } from '../L0/Crypto.js';
 
 export interface UserSession {
     userId: string;
-    privateKey: Ed25519PrivateKey;
+    keyPair: KeyPair;
     loggedInAt: number;
 }
 
@@ -26,29 +24,31 @@ export class SovereignApp {
         private gateway: GovernanceInterface
     ) { }
 
-    public login(userId: string, privateKey: Ed25519PrivateKey) {
+    public login(userId: string, keyPair: KeyPair) {
         this.session = {
             userId,
-            privateKey,
+            keyPair,
             loggedInAt: Date.now()
         };
     }
 
-    public async performAction(actionId: string, payload: { metricId: string, value: any }) {
+    public async performAction(
+        actionId: string,
+        payload: { metricId: string, value: any, protocolId?: string }
+    ) {
         if (!this.session) throw new Error("App Error: User unauthenticated");
 
-        // Construct Kernel Intent
-        const timestamp = `0:${Math.floor(Date.now() / 1000)}`;
-        const intent = IntentFactory.create(
-            payload.metricId,
-            payload.value,
-            this.session.userId,
-            this.session.privateKey,
-            timestamp
-        );
+        // Construct Action using ActionBuilder (Phase 1: Modernization)
+        const builder = new ActionBuilder();
+        const action = builder
+            .withInitiator(this.session.userId)
+            .withProtocol(payload.protocolId || 'SYSTEM')
+            .withMetric(payload.metricId)
+            .withValue(payload.value)
+            .build(this.session.keyPair);
 
         // Execute via Interface (L6)
-        const commit = this.gateway.submit(intent);
+        const commit = this.gateway.submit(action);
 
         return {
             actionId,
