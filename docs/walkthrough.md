@@ -62,5 +62,18 @@ The system now includes an **Obligation Engine** and **Protocol Studio**:
   2.  **Studio**: Authoring and Simulating Protocols in the JSON DSL.
   3.  **Risk**: Heatmap of compliance status.
 
+
+## Extension: Stratum V (Iron Wallet)
+The system now includes the **Personal Continuity System**:
+- **Protocols**: `SovereignSilence` (Deadman Switch) and `MedicalEmergency` (Incapacity).
+- **Interface**: L6 API Gateway (`IronWalletInterface`) for vital checks and succession claims.
+- **Verification**: Full lifecycle tests (`System.test.ts`) proving the "Lazarus Reset" capability.
+
+## Extension: Stratum VI (Iron Habit)
+The system now includes the **Cryptographic Discipline Engine**:
+- **Protocols**: `DailyJournal` (Streak Logic) and `RestDay` (Budget Logic).
+- **Interface**: L6 API for `checkIn` and `skipDay`.
+- **Economics**: Enforced spending of `RestTokens` to preserve streaks, preventing inflation.
+
 ## Conclusion
 The system adheres to the "Iron." specification, "Minimum Cryptographic & Security Specification", and formally verified safety properties.

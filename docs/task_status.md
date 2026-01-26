@@ -99,3 +99,24 @@
     - [x] Dashboard (Metrics)
     - [x] Risk Heatmap
     - [x] Studio Tab
+
+## Stratum V: Iron Wallet (Personal Continuity)
+- [x] **Constitution & Doctrine**
+    - [x] Scope Laws (`IRON_WALLET_CONSTITUTION.md`)
+    - [x] Trust Doctrine (`IRON_WALLET_DOCTRINE.md`)
+- [x] **Protocols (L4)**
+    - [x] `SovereignSilence` (Deadman Switch)
+    - [x] `MedicalEmergency` (Incapacity Access)
+- [x] **Interface (L6)**
+    - [x] `IronWalletInterface.ts` (API Gateway)
+    - [x] Verification: `System.test.ts` (Lazarus Reset)
+
+## Stratum VI: Iron Habit (Cryptographic Discipline)
+- [x] **Constitution**
+    - [x] `IRON_HABIT_CONSTITUTION.md` (Commitment Engine)
+- [x] **Protocols (L4)**
+    - [x] `DailyJournal` (Streak Logic)
+    - [x] `RestDay` (Budget Logic)
+- [x] **Interface (L6)**
+    - [x] `IronHabitInterface.ts` (Check-In & Skip)
+    - [x] Verification: `System.test.ts` (Streak & Budget)
