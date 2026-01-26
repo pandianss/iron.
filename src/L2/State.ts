@@ -64,6 +64,7 @@ export interface StateSnapshot {
     hash: string;
     previousHash: string;
     actionId: string;
+    timestamp: string; // Explicit timestamp of the snapshot
 }
 
 export class StateModel {
@@ -90,7 +91,8 @@ export class StateModel {
             state: this.currentState,
             hash: genesisHash,
             previousHash: '0000000000000000000000000000000000000000000000000000000000000000',
-            actionId: 'genesis'
+            actionId: 'genesis',
+            timestamp: '0:0'
         });
     }
 
@@ -195,12 +197,13 @@ export class StateModel {
         const globalRoot = hashState(Buffer.from(globalStateParams + finalState.version));
 
         // 5b. Canonicalization (Phase 3 Strictness)
-        // [Version, ActionID, Timestamp, RootHash]
-        const canonical: [number, string, string, string] = [
+        // [Version, ActionID, Timestamp, RootHash, PreviousHash]
+        const canonical: [number, string, string, string, string] = [
             finalState.version,
             validActionId,
             timestamp,
-            globalRoot
+            globalRoot,
+            previousSnapshot.hash
         ];
         // The Snapshot Hash is now the hash of this Tuple, enforcing strict structure
         const snapshotHash = hash(JSON.stringify(canonical));
@@ -210,7 +213,8 @@ export class StateModel {
             state: finalState,
             hash: snapshotHash,
             previousHash: previousSnapshot.hash,
-            actionId: validActionId
+            actionId: validActionId,
+            timestamp
         };
 
         this.snapshots.push(snapshot);
@@ -241,11 +245,12 @@ export class StateModel {
             const globalRoot = hashState(Buffer.from(globalStateParams + curr.state.version));
 
             // Canonical Check (Phase 3)
-            const canonical: [number, string, string, string] = [
+            const canonical: [number, string, string, string, string] = [
                 curr.state.version,
                 curr.actionId,
-                curr.state.lastUpdate, // Approximate timestamp link
-                globalRoot
+                curr.timestamp,
+                globalRoot,
+                curr.previousHash
             ];
 
             // Note: Timestamp in canonical tuple comes from the Action input (applyTrusted args), 

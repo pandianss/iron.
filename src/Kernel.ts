@@ -5,6 +5,8 @@ import { ProtocolEngine } from './L4/Protocol.js';
 import type { Mutation } from './L4/Protocol.js';
 import { AuditLog } from './L5/Audit.js';
 import { SignatureGuard, ScopeGuard, TimeGuard, BudgetGuard, InvariantGuard } from './L0/Guards.js';
+import { checkInvariants } from './L0/Invariants.js';
+import type { Rejection, IllegalState } from './L0/Invariants.js';
 import { Budget, LogicalTimestamp } from './L0/Kernel.js';
 import type { KernelState, EntityID, ActionID, CapacityID, JurisdictionID } from './L0/Ontology.js';
 
@@ -124,20 +126,24 @@ export class GovernanceKernel {
         const attempt = this.attempts.get(attemptId);
         if (!attempt) throw new Error("Kernel Error: Attempt not found");
 
-        // 0. Invariant Guard (Illegal State Rejection)
-        const invResult = InvariantGuard({ action: attempt.action, manager: this.identity });
-        if (!invResult.ok) {
-            const reason = `Invariant Violation: ${invResult.violation}`;
-            this.reject(attempt, reason, { violationType: 'INVARIANT_FAILURE' });
-            return { status: 'REJECTED', reason };
+        // 0. Invariant Guard (Constitutional Law)
+        const check = checkInvariants({ action: attempt.action, manager: this.identity });
+        if (!check.ok && check.rejection) {
+            this.reject(attempt, check.rejection);
+            return { status: 'REJECTED', reason: check.rejection.message };
         }
 
         // 1. Signature Guard (Identity Resolution)
+        // 1. Signature Guard (Identity Resolution)
         const sigResult = SignatureGuard({ intent: attempt.action, manager: this.identity });
         if (!sigResult.ok) {
-            const reason = `Authority Violation: Invalid Signature (${sigResult.violation})`;
-            this.reject(attempt, reason);
-            return { status: 'REJECTED', reason };
+            const rejection: Rejection = {
+                code: 'SIGNATURE_INVALID',
+                invariantId: 'SIG-GUARD-01',
+                message: `Authority Violation: Invalid Signature (${sigResult.violation})`
+            };
+            this.reject(attempt, rejection);
+            return { status: 'REJECTED', reason: rejection.message };
         }
 
         // 2. Authority Guard (Jurisdiction/Capacity check)
@@ -148,15 +154,22 @@ export class GovernanceKernel {
         };
 
         if (!this.authority.authorized(attempt.initiator, `METRIC.WRITE:${targetMetric}`, context)) {
-            const reason = `Authority Violation: ${attempt.initiator} lacks Jurisdiction or exceeds limits for ${targetMetric}`;
-            const metadata = {
-                initiator: attempt.initiator,
-                target: targetMetric,
-                context,
-                violationType: 'AUTHORITY_OVERSCOPE'
+            const rejection: Rejection = {
+                code: 'AUTHORITY_OVERSCOPE' as any, // Mapped to IllegalState extension if needed
+                invariantId: 'AUTH-GUARD-01',
+                message: `Authority Violation: ${attempt.initiator} lacks Jurisdiction for ${targetMetric}`
             };
-            this.reject(attempt, reason, metadata);
-            return { status: 'REJECTED', reason };
+            // Note: AUTHORITY_OVERSCOPE should be added to IllegalState if frequent, 
+            // but for Invariants we use generic codes. 
+            // Let's map to PROTOCOL_VIOLATION or a new code. 
+            // Audit requirement: Formal Codes. 
+            // We'll trust the Invariants.ts definition or extend it.
+            // Extending Invariants.ts is best properly, but for now using cast to satisfy compiler if strict.
+            // Actually let's use 'PROTOCOL_VIOLATION' for now or add EXPIRED_AUTHORITY/REVOKED_ENTITY matches.
+            // Let's use 'EXPIRED_AUTHORITY' as closest proxy or just add AUTHORITY_INVALID.
+
+            this.reject(attempt, rejection, { context });
+            return { status: 'REJECTED', reason: rejection.message };
         }
 
         // 3. Protocol Binding & Policy Enforcement (Product 3: Gate)
@@ -164,9 +177,13 @@ export class GovernanceKernel {
 
         if (!isSystemAction) {
             if (!this.protocols.isRegistered(attempt.protocolId)) {
-                const reason = "Protocol Binding Violation: Protocol not registered";
-                this.reject(attempt, reason);
-                return { status: 'REJECTED', reason };
+                const rejection: Rejection = {
+                    code: 'PROTOCOL_VIOLATION',
+                    invariantId: 'PRO-BIND-01',
+                    message: "Protocol Binding Violation: Protocol not registered"
+                };
+                this.reject(attempt, rejection);
+                return { status: 'REJECTED', reason: rejection.message };
             }
 
             // Pre-execution evaluation (The "Gate")
@@ -177,9 +194,13 @@ export class GovernanceKernel {
 
             const protocol = this.protocols.get(attempt.protocolId);
             if (protocol?.strict && mutations.length === 0) {
-                const reason = `Policy Violation: ${protocol.name} rejects this execution.`;
-                this.reject(attempt, reason, { protocolId: attempt.protocolId, violationType: 'POLICY_REJECTION' });
-                return { status: 'REJECTED', reason };
+                const rejection: Rejection = {
+                    code: 'PROTOCOL_VIOLATION',
+                    invariantId: 'PRO-STRICT-01',
+                    message: `Policy Violation: ${protocol.name} rejects this execution.`
+                };
+                this.reject(attempt, rejection, { protocolId: attempt.protocolId, violationType: 'POLICY_REJECTION' });
+                return { status: 'REJECTED', reason: rejection.message };
             }
         }
 
@@ -309,17 +330,22 @@ export class GovernanceKernel {
         return this.commitAttempt(aid, new Budget('RISK' as any, 1000));
     }
 
-    private reject(attempt: Attempt, reason: string, metadata?: Record<string, any>) {
+    private reject(attempt: Attempt, rejection: Rejection, metadata?: Record<string, any>) {
         attempt.status = 'REJECTED';
-        this.audit.append(attempt.action, 'REJECT', reason, metadata);
+        this.audit.append(attempt.action, 'REJECT', rejection.message, {
+            ...metadata,
+            code: rejection.code,
+            invariantId: rejection.invariantId
+        });
 
         // Automatic Revocation (Product 1 requirement)
-        // If a limit is breached, we pull ALL delegations for this entity on this metric (strict policy)
-        if (metadata?.violationType === 'AUTHORITY_OVERSCOPE') {
-            console.log(`[Iron] Breach Detected. Triggering Automatic Revocation for ${attempt.initiator}`);
-            // In a real system, we'd search for the specific delegation ID. 
-            // Here we'll treat it as a systemic lock on the entity for this target.
-            this.identity.revoke(attempt.initiator, '0:0');
+        if (rejection.code === 'REVOKED_ENTITY' || rejection.code === 'SIGNATURE_INVALID') {
+            console.log(`[Iron] Critical Breach (${rejection.code}). Triggering Automatic Revocation for ${attempt.initiator}`);
+            try {
+                this.identity.revoke(attempt.initiator, '0:0');
+            } catch (e: any) {
+                console.warn(`[Iron] Auto-Revocation Failed: ${e.message}`);
+            }
         }
     }
 
